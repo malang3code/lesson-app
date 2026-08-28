@@ -43,7 +43,7 @@ function todayStr() {
 export default function AdminAssignPage() {
   const [rawDates, setRawDates] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
-  const [showPast, setShowPast] = useState(false); // 과거 날짜 보기 토글 상태
+  const [showPast, setShowPast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -69,7 +69,6 @@ export default function AdminAssignPage() {
     const today = todayStr();
     let dates = rawDates;
 
-    // 과거 날짜 보기가 비활성화 상태면 오늘 이후 날짜만 노출
     if (!showPast) {
       dates = dates.filter((d) => d >= today);
     }
@@ -225,51 +224,47 @@ export default function AdminAssignPage() {
   return (
     <div className="min-h-screen bg-[#FAFAF7] text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="font-[family-name:var(--font-mono-club)] text-xs tracking-[0.25em] text-[#1C2B33]/50 uppercase">
-              Admin Roster
-            </p>
-            <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
-              레슨 배정판
-            </h1>
-          </div>
-
+        {/* 상단 타이틀 및 월별 레슨일 관리 링크 (왼쪽 정렬) */}
+        <div>
+          <p className="font-[family-name:var(--font-mono-club)] text-xs tracking-[0.25em] text-[#1C2B33]/50 uppercase">
+            Admin Roster
+          </p>
+          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
+            레슨 배정판
+          </h1>
           <a
             href="/admin/calendar"
-            className="text-sm text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
+            className="mt-2 inline-block text-sm text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
           >
             월별 레슨일 관리
           </a>
         </div>
 
-        {/* 요일 필터 & 과거 날짜 보기 버튼 바 */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ['all', '전체'],
-                ['tue', '화요일만'],
-                ['thu', '목요일만'],
-              ] as [Filter, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter(key)}
-                className={
-                  'rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
-                  (filter === key
-                    ? 'bg-[#1C2B33] text-white'
-                    : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60')
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        {/* 요일 필터 & 과거 날짜 보기 버튼 바 (왼쪽 정렬) */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {(
+            [
+              ['all', '전체'],
+              ['tue', '화요일만'],
+              ['thu', '목요일만'],
+            ] as [Filter, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={
+                'rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
+                (filter === key
+                  ? 'bg-[#1C2B33] text-white'
+                  : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60')
+              }
+            >
+              {label}
+            </button>
+          ))}
 
-          {/* 과거 날짜 보기 토글 버튼 */}
+          {/* 과거 날짜 보기 버튼 */}
           <button
             type="button"
             onClick={() => setShowPast((prev) => !prev)}
