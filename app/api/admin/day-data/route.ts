@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const dayOfWeek = new Date(y, m - 1, d).getDay();
 
     // 1. 해당 요일의 시간표 슬롯 조회
-    const { data: slots, error: slotsErr } = await supabase
+    const { data: slots, error: slotsErr } = await supabaseAdmin
       .from('time_slots')
       .select('*')
       .eq('day_of_week', dayOfWeek)
@@ -22,16 +22,16 @@ export async function GET(req: NextRequest) {
 
     if (slotsErr) throw slotsErr;
 
-    // 2. 해당 날짜에 이미 배정된 레슨 내역 조회 (과거/비활성 회원도 정상 표시)
-    const { data: lessons, error: lessonsErr } = await supabase
+    // 2. 해당 날짜에 이미 배정된 레슨 내역 조회
+    const { data: lessons, error: lessonsErr } = await supabaseAdmin
       .from('lessons')
       .select('id, time_slot_id, member_id, members(id, name, department, phone)')
       .eq('lesson_date', date);
 
     if (lessonsErr) throw lessonsErr;
 
-    // 3. 신규 배정 대상 회원 목록: is_active = true 인 회원만 조회
-    const { data: members, error: membersErr } = await supabase
+    // 3. 신규 배정 대상 회원: is_active = true 인 회원만 조회
+    const { data: members, error: membersErr } = await supabaseAdmin
       .from('members')
       .select('id, name, department, phone')
       .eq('is_active', true)

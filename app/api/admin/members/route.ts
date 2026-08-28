@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 // 회원 목록 전체 조회 (활성/비활성 모두 포함)
 export async function GET() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('members')
       .select('*')
       .order('name');
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '이름은 필수 항목입니다.' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('members')
       .insert([{ name, department: department || null, phone: phone || null, is_active: true }])
       .select()
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 회원 활성화/비활성화(수강/미수강) 상태 변경
+// 회원 활성화/비활성화 상태 변경
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'id와 is_active 값은 필수입니다.' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('members')
       .update({ is_active })
       .eq('id', id)
