@@ -43,6 +43,7 @@ function todayStr() {
 export default function AdminAssignPage() {
   const [rawDates, setRawDates] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [showPast, setShowPast] = useState(false); // 과거 날짜 보기 토글 상태
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -64,11 +65,20 @@ export default function AdminAssignPage() {
       .catch(() => setError('레슨일 목록을 불러오지 못했습니다'));
   }, []);
 
+  // 요일 필터 및 과거 날짜 필터 적용
   const filteredDates = useMemo(() => {
-    if (filter === 'all') return rawDates;
+    const today = todayStr();
+    let dates = rawDates;
+
+    // 과거 날짜 보기 비활성화 시 오늘 이후(오늘 포함) 날짜만 필터링
+    if (!showPast) {
+      dates = dates.filter((d) => d >= today);
+    }
+
+    if (filter === 'all') return dates;
     const target = filter === 'tue' ? 2 : 4;
-    return rawDates.filter((d) => dowOfDate(d) === target);
-  }, [rawDates, filter]);
+    return dates.filter((d) => dowOfDate(d) === target);
+  }, [rawDates, filter, showPast]);
 
   useEffect(() => {
     if (filteredDates.length === 0) {
@@ -78,7 +88,7 @@ export default function AdminAssignPage() {
     if (selectedDate && filteredDates.includes(selectedDate)) return;
     const today = todayStr();
     const upcoming = filteredDates.find((d) => d >= today);
-    setSelectedDate(upcoming ?? filteredDates[filteredDates.length - 1]);
+    setSelectedDate(upcoming ?? filteredDates[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredDates]);
 
@@ -146,7 +156,6 @@ export default function AdminAssignPage() {
 
   const handleResetDay = async () => {
     if (!selectedDate) return;
-    //if (!confirm(selectedDate + '의 배정을 전부 초기화할까요? 되돌릴 수 없습니다.')) return;
     setResetting(true);
     try {
       const res = await fetch('/api/admin/lessons?date=' + selectedDate, { method: 'DELETE' });
@@ -217,20 +226,26 @@ export default function AdminAssignPage() {
   return (
     <div className="min-h-screen bg-[#FAFAF7] text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
-        <p className="font-[family-name:var(--font-mono-club)] text-xs tracking-[0.25em] text-[#1C2B33]/50 uppercase">
-          Admin Roster
-        </p>
-        <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
-          레슨 배정판
-        </h1>
-        <a
-          href="/admin/calendar"
-          className="mt-2 inline-block text-sm text-[#1C2B33]/50 underline underline-offset-2"
-        >
-          월별 레슨일 관리
-        </a>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="font-[family-name:var(--font-mono-club)] text-xs tracking-[0.25em] text-[#1C2B33]/50 uppercase">
+              Admin Roster
+            </p>
+            <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
+              레슨 배정판
+            </h1>
+          </div>
 
-        <div className="mt-4 flex gap-2">
+          <a
+            href="/admin/calendar"
+            className="text-sm text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
+          >
+            월별 레슨일 관리
+          </a>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {/* 요일 필터 버튼들 */}
           {(
             [
               ['all', '전체'],
@@ -243,7 +258,7 @@ export default function AdminAssignPage() {
               type="button"
               onClick={() => setFilter(key)}
               className={
-                'rounded-full px-3 py-1.5 text-sm font-medium ' +
+                'rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
                 (filter === key
                   ? 'bg-[#1C2B33] text-white'
                   : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60')
@@ -252,6 +267,20 @@ export default function AdminAssignPage() {
               {label}
             </button>
           ))}
+
+          {/* 과거 날짜 보기 토글 버튼 */}
+          <button
+            type="button"
+            onClick={() => setShowPast((prev) => !prev)}
+            className={
+              'ml-auto rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
+              (showPast
+                ? 'bg-[#8F3A24] text-white'
+                : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60 hover:bg-[#1C2B33]/5')
+            }
+          >
+            {showPast ? '과거 날짜 숨기기' : '과거 날짜 보기'}
+          </button>
         </div>
 
         <div className="mt-4 flex items-center gap-3">
@@ -259,7 +288,7 @@ export default function AdminAssignPage() {
             type="button"
             onClick={goPrev}
             disabled={currentIndex <= 0}
-            className="grid h-9 w-9 place-items-center rounded-full border border-[#1C2B33]/15 text-lg leading-none disabled:opacity-30"
+            className="grid h-9 w-9 place-items-center rounded-full border border-[#1C2B33]/15 text-lg leading-none disabled:opacity-30 hover:bg-[#1C2B33]/5"
             aria-label="이전 레슨일"
           >
             Prev
@@ -279,7 +308,7 @@ export default function AdminAssignPage() {
             type="button"
             onClick={goNext}
             disabled={currentIndex < 0 || currentIndex >= filteredDates.length - 1}
-            className="grid h-9 w-9 place-items-center rounded-full border border-[#1C2B33]/15 text-lg leading-none disabled:opacity-30"
+            className="grid h-9 w-9 place-items-center rounded-full border border-[#1C2B33]/15 text-lg leading-none disabled:opacity-30 hover:bg-[#1C2B33]/5"
             aria-label="다음 레슨일"
           >
             Next
@@ -296,7 +325,7 @@ export default function AdminAssignPage() {
                   setCopyPanelOpen((v) => !v);
                   setCopyResult('');
                 }}
-                className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70"
+                className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
               >
                 {copyPanelOpen ? '복사 패널 닫기' : '이 배정을 다른 날짜에 복사'}
               </button>
@@ -305,7 +334,7 @@ export default function AdminAssignPage() {
                 type="button"
                 onClick={handleResetDay}
                 disabled={resetting}
-                className="rounded-full border border-[#B5482F]/30 bg-white px-4 py-1.5 text-sm font-medium text-[#B5482F] disabled:opacity-40"
+                className="rounded-full border border-[#B5482F]/30 bg-white px-4 py-1.5 text-sm font-medium text-[#B5482F] disabled:opacity-40 hover:bg-[#B5482F]/10"
               >
                 {resetting ? '초기화 중...' : '이 날짜 전체 초기화'}
               </button>
@@ -450,7 +479,7 @@ export default function AdminAssignPage() {
             )}
             {!loading && !selectedDate && (
               <p className="pl-[68px] text-sm text-[#1C2B33]/40">
-                등록된 레슨일이 없습니다. 먼저 월별 레슨일 관리에서 날짜를 지정해주세요.
+                표시할 레슨일이 없습니다. 과거 날짜를 보려면 상단의 '과거 날짜 보기'를 눌러주세요.
               </p>
             )}
           </div>
