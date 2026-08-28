@@ -65,12 +65,11 @@ export default function AdminAssignPage() {
       .catch(() => setError('레슨일 목록을 불러오지 못했습니다'));
   }, []);
 
-  // 요일 필터 및 과거 날짜 필터 적용
   const filteredDates = useMemo(() => {
     const today = todayStr();
     let dates = rawDates;
 
-    // 과거 날짜 보기 비활성화 시 오늘 이후(오늘 포함) 날짜만 필터링
+    // 과거 날짜 보기가 비활성화 상태면 오늘 이후 날짜만 노출
     if (!showPast) {
       dates = dates.filter((d) => d >= today);
     }
@@ -244,45 +243,48 @@ export default function AdminAssignPage() {
           </a>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {/* 요일 필터 버튼들 */}
-          {(
-            [
-              ['all', '전체'],
-              ['tue', '화요일만'],
-              ['thu', '목요일만'],
-            ] as [Filter, string][]
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={
-                'rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
-                (filter === key
-                  ? 'bg-[#1C2B33] text-white'
-                  : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60')
-              }
-            >
-              {label}
-            </button>
-          ))}
+        {/* 요일 필터 & 과거 날짜 보기 버튼 바 */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ['all', '전체'],
+                ['tue', '화요일만'],
+                ['thu', '목요일만'],
+              ] as [Filter, string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                className={
+                  'rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
+                  (filter === key
+                    ? 'bg-[#1C2B33] text-white'
+                    : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
           {/* 과거 날짜 보기 토글 버튼 */}
           <button
             type="button"
             onClick={() => setShowPast((prev) => !prev)}
             className={
-              'ml-auto rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
+              'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ' +
               (showPast
-                ? 'bg-[#8F3A24] text-white'
-                : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60 hover:bg-[#1C2B33]/5')
+                ? 'bg-[#8F3A24] text-white shadow-sm'
+                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
             }
           >
-            {showPast ? '과거 날짜 숨기기' : '과거 날짜 보기'}
+            {showPast ? '✓ 과거 날짜 포함됨' : '과거 날짜 보기'}
           </button>
         </div>
 
+        {/* 날짜 선택 Prev / Next */}
         <div className="mt-4 flex items-center gap-3">
           <button
             type="button"
@@ -300,7 +302,7 @@ export default function AdminAssignPage() {
                 {selectedDate} ({dowLabel(selectedDate)})
               </span>
             ) : (
-              <span className="text-sm text-[#1C2B33]/40">등록된 레슨일 없음</span>
+              <span className="text-sm text-[#1C2B33]/40">선택 가능한 레슨일 없음</span>
             )}
           </div>
 
@@ -479,7 +481,7 @@ export default function AdminAssignPage() {
             )}
             {!loading && !selectedDate && (
               <p className="pl-[68px] text-sm text-[#1C2B33]/40">
-                표시할 레슨일이 없습니다. 과거 날짜를 보려면 상단의 '과거 날짜 보기'를 눌러주세요.
+                표시할 레슨일이 없습니다. 과거 날짜를 보려면 상단의 &apos;과거 날짜 보기&apos;를 눌러주세요.
               </p>
             )}
           </div>
