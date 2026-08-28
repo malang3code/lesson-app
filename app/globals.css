@@ -1,3 +1,9 @@
+@theme inline {
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono-club: var(--font-mono-club);
+}
+
 @import "tailwindcss";
 
 :root {
