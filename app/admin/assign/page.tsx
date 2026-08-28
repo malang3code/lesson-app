@@ -146,7 +146,7 @@ export default function AdminAssignPage() {
 
   const handleResetDay = async () => {
     if (!selectedDate) return;
-    if (!confirm(selectedDate + '의 배정을 전부 초기화할까요? 되돌릴 수 없습니다.')) return;
+    //if (!confirm(selectedDate + '의 배정을 전부 초기화할까요? 되돌릴 수 없습니다.')) return;
     setResetting(true);
     try {
       const res = await fetch('/api/admin/lessons?date=' + selectedDate, { method: 'DELETE' });
