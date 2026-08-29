@@ -18,7 +18,7 @@ type Slot = {
   start_time: string;
   end_time: string;
   capacity: number;
-  assigned: AssignedItem[];
+  assigned?: AssignedItem[];
 };
 
 function dowLabel(dateStr: string) {
@@ -134,7 +134,7 @@ export default function ViewerAssignPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/lessons?date=' + selectedDate);
+      const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error || '조회 실패');
@@ -335,7 +335,7 @@ export default function ViewerAssignPage() {
       <main className="px-4 py-6 sm:px-8">
         <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
           
-          {/* 🎯 캡처 이미지 상단 날짜 헤더 (이게 없어서 날짜가 안나왔던 것) */}
+          {/* 🎯 캡처 이미지 상단 날짜 헤더 */}
           {selectedDate && (
             <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
               <div className="flex items-baseline gap-2">
@@ -352,9 +352,12 @@ export default function ViewerAssignPage() {
 
             <div className="space-y-3">
               {slots.map((slot) => {
-                const isFull = slot.assigned.length >= slot.capacity;
-                const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
-                const startH = slot.start_time.slice(0, 5);
+                // 🎯 undefined 방어 코드 적용
+                const assignedList = slot.assigned || [];
+                const capacity = slot.capacity || 2;
+                const isFull = assignedList.length >= capacity;
+                const emptySlotsCount = Math.max(0, capacity - assignedList.length);
+                const startH = (slot.start_time || '').slice(0, 5);
 
                 return (
                   <div key={slot.id} className="relative flex gap-3 sm:gap-6">
@@ -374,7 +377,7 @@ export default function ViewerAssignPage() {
 
                     <div className="flex-1 rounded-2xl border border-[#1C2B33]/10 bg-white p-2.5 sm:p-3 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
                       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                        {slot.assigned.map((a) => {
+                        {assignedList.map((a) => {
                           const isCompleted = !!a.isCompleted;
 
                           return (
@@ -387,7 +390,6 @@ export default function ViewerAssignPage() {
                                   : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10')
                               }
                             >
-                              {/* 🎯 캡처 시 이름 잘림 방지 (whitespace-nowrap) */}
                               <span className="whitespace-nowrap">{a.name}</span>
                             </span>
                           );
