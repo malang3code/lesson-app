@@ -459,7 +459,7 @@ export default function AdminAssignPage() {
     }
   };
 
-  // 📷 캡처 & 공유 핸들러 (뷰어와 동일한 안정적 캡처 옵션)
+  // 📷 캡처 & 공유 핸들러
   const handleShareImage = async () => {
     if (!captureRef.current || capturing || !selectedDate) return;
     setCapturing(true);
@@ -575,7 +575,7 @@ export default function AdminAssignPage() {
           </button>
         </div>
 
-        {/* 날짜 선택 네비게이션 영역 */}
+        {/* 🎯 날짜 뱃지 제거 & '📅 캘린더'로 축소된 상단 네비게이션 */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -586,16 +586,6 @@ export default function AdminAssignPage() {
           >
             ◀ 이전
           </button>
-
-          <div className="flex h-8 items-center justify-center rounded-full border border-[#1C2B33]/20 bg-white px-3.5 shadow-xs">
-            {selectedDate ? (
-              <span className="font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#1C2B33]">
-                {selectedDate} ({dowLabel(selectedDate)})
-              </span>
-            ) : (
-              <span className="text-xs text-[#1C2B33]/40">선택된 날짜 없음</span>
-            )}
-          </div>
 
           <button
             type="button"
@@ -620,7 +610,7 @@ export default function AdminAssignPage() {
                 : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
             }
           >
-            {calendarOpen ? '✕ 달력 접기' : '📅 달력으로 선택'}
+            {calendarOpen ? '✕ 달력 접기' : '📅 캘린더'}
           </button>
         </div>
 
@@ -785,7 +775,7 @@ export default function AdminAssignPage() {
       <main className="px-4 py-6 sm:px-8">
         <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
           
-          {/* 🎯 캡처 이미지 상단 날짜 헤더 (뷰어 화면과 완벽히 동일한 구조) */}
+          {/* 🎯 캡처 이미지 상단 날짜 헤더 (뷰어와 동일한 최상단 독립 배치) */}
           {selectedDate && (
             <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
               <div className="flex items-baseline gap-2">
@@ -797,6 +787,7 @@ export default function AdminAssignPage() {
             </div>
           )}
 
+          {/* 🎯 슬롯 목록 및 세로선 영역을 별도 컨테이너로 분리하여 날짜 헤더 침범 방지 */}
           <div className="relative">
             <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
