@@ -152,7 +152,7 @@ export default function ViewerAssignPage() {
     loadData();
   }, [loadData]);
 
-  // 📷 캡처 핸들러
+  // 📷 캡처 & 공유 핸들러
   const handleShareImage = async () => {
     if (!captureRef.current || capturing || !selectedDate) return;
     setCapturing(true);
@@ -210,7 +210,7 @@ export default function ViewerAssignPage() {
           </button>
         </div>
 
-        {/* 날짜 선택 네비게이션 */}
+        {/* 상단 네비게이션: 날짜 뱃지 제외 & '캘린더' 텍스트 적용 */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -220,16 +220,6 @@ export default function ViewerAssignPage() {
           >
             ◀ 이전
           </button>
-
-          <div className="flex h-8 items-center justify-center rounded-full border border-[#1C2B33]/20 bg-white px-3.5 shadow-xs">
-            {selectedDate ? (
-              <span className="font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#1C2B33]">
-                {selectedDate} ({dowLabel(selectedDate)})
-              </span>
-            ) : (
-              <span className="text-xs text-[#1C2B33]/40">선택된 날짜 없음</span>
-            )}
-          </div>
 
           <button
             type="button"
@@ -250,7 +240,7 @@ export default function ViewerAssignPage() {
                 : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
             }
           >
-            {calendarOpen ? '✕ 달력 접기' : '📅 달력으로 선택'}
+            {calendarOpen ? '✕ 달력 접기' : '📅 캘린더'}
           </button>
         </div>
 
@@ -331,11 +321,11 @@ export default function ViewerAssignPage() {
         )}
       </header>
 
-      {/* 본문 시간표 영역 (캡처 대상) */}
+      {/* 본문 시간표 영역 (순수 Read-Only 캡처 대상) */}
       <main className="px-4 py-6 sm:px-8">
         <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
           
-          {/* 🎯 캡처 이미지 상단 날짜 헤더 */}
+          {/* 캡처 이미지 상단 날짜 헤더 */}
           {selectedDate && (
             <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
               <div className="flex items-baseline gap-2">
@@ -352,7 +342,6 @@ export default function ViewerAssignPage() {
 
             <div className="space-y-3">
               {slots.map((slot) => {
-                // 🎯 undefined 방어 코드 적용
                 const assignedList = slot.assigned || [];
                 const capacity = slot.capacity || 2;
                 const isFull = assignedList.length >= capacity;
