@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import ViewerDrawer from '../../../components/ViewerDrawer';
+import ViewerDrawer from '@/components/ViewerDrawer';
 import { toPng } from 'html-to-image';
 
 type AssignedItem = {
@@ -44,17 +44,14 @@ export default function ViewerAssignPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [calendarOpen, setCalendarOpen] = useState(false);
-
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
-
   const [toastMessage, setToastMessage] = useState('');
 
-  // 캡처 영역 참조
   const captureRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -63,9 +60,7 @@ export default function ViewerAssignPage() {
 
   useEffect(() => {
     if (!toastMessage) return;
-    const timer = setTimeout(() => {
-      setToastMessage('');
-    }, 1000);
+    const timer = setTimeout(() => setToastMessage(''), 1200);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
@@ -94,7 +89,6 @@ export default function ViewerAssignPage() {
   }, [showToast]);
 
   const activeLessonDateSet = useMemo(() => new Set(rawDates), [rawDates]);
-
   const today = todayStr();
   const currentYm = today.slice(0, 7);
   const currentCalYm = `${calYear}-${String(calMonth).padStart(2, '0')}`;
@@ -104,9 +98,7 @@ export default function ViewerAssignPage() {
     const lastDate = new Date(calYear, calMonth, 0).getDate();
 
     const days: ({ dateStr: string; dayNum: number; isLesson: boolean; isBeforeCurrentMonth: boolean } | null)[] = [];
-    for (let i = 0; i < firstDow; i++) {
-      days.push(null);
-    }
+    for (let i = 0; i < firstDow; i++) days.push(null);
 
     for (let d = 1; d <= lastDate; d++) {
       const dateStr = `${calYear}-${String(calMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -118,14 +110,11 @@ export default function ViewerAssignPage() {
         isBeforeCurrentMonth: ym < currentYm,
       });
     }
-
     return days;
   }, [calYear, calMonth, activeLessonDateSet, currentYm]);
 
   const navigableLessonDates = useMemo(() => {
-    const list = showPast
-      ? [...rawDates]
-      : rawDates.filter((d) => d.slice(0, 7) >= currentYm);
+    const list = showPast ? [...rawDates] : rawDates.filter((d) => d.slice(0, 7) >= currentYm);
     return list.sort();
   }, [rawDates, showPast, currentYm]);
 
@@ -138,44 +127,6 @@ export default function ViewerAssignPage() {
     setCalMonth(m);
   };
 
-  const handlePrevLesson = () => {
-    if (currentLessonIndex > 0) {
-      handleSwitchDate(navigableLessonDates[currentLessonIndex - 1]);
-    } else if (currentLessonIndex === -1 && selectedDate) {
-      const prev = [...navigableLessonDates].reverse().find((d) => d < selectedDate);
-      if (prev) handleSwitchDate(prev);
-    }
-  };
-
-  const handleNextLesson = () => {
-    if (currentLessonIndex >= 0 && currentLessonIndex < navigableLessonDates.length - 1) {
-      handleSwitchDate(navigableLessonDates[currentLessonIndex + 1]);
-    } else if (currentLessonIndex === -1 && selectedDate) {
-      const next = navigableLessonDates.find((d) => d > selectedDate);
-      if (next) handleSwitchDate(next);
-    }
-  };
-
-  const handlePrevCalMonth = () => {
-    setCalMonth((prev) => {
-      if (prev === 1) {
-        setCalYear((y) => y - 1);
-        return 12;
-      }
-      return prev - 1;
-    });
-  };
-
-  const handleNextCalMonth = () => {
-    setCalMonth((prev) => {
-      if (prev === 12) {
-        setCalYear((y) => y + 1);
-        return 1;
-      }
-      return prev + 1;
-    });
-  };
-
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
@@ -183,7 +134,7 @@ export default function ViewerAssignPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/day-data?date=' + selectedDate);
+      const res = await fetch('/api/lessons?date=' + selectedDate);
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error || '조회 실패');
@@ -201,7 +152,7 @@ export default function ViewerAssignPage() {
     loadData();
   }, [loadData]);
 
-  // 📷 모바일 이미지 캡처 & 공유 핸들러
+  // 📷 캡처 핸들러
   const handleShareImage = async () => {
     if (!captureRef.current || capturing || !selectedDate) return;
     setCapturing(true);
@@ -233,9 +184,7 @@ export default function ViewerAssignPage() {
         showToast('시간표 이미지가 저장되었습니다.');
       }
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        showToast('이미지 생성 실패');
-      }
+      if (err?.name !== 'AbortError') showToast('이미지 생성 실패');
     } finally {
       setCapturing(false);
     }
@@ -250,7 +199,6 @@ export default function ViewerAssignPage() {
             레슨 시간표
           </h1>
 
-          {/* 🎯 레슨 시간표 바로 오른쪽에 컴팩트하게 배치 */}
           <button
             type="button"
             onClick={handleShareImage}
@@ -262,14 +210,13 @@ export default function ViewerAssignPage() {
           </button>
         </div>
 
-        {/* 날짜 네비게이션 */}
+        {/* 날짜 선택 네비게이션 */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={handlePrevLesson}
+            onClick={() => currentLessonIndex > 0 && handleSwitchDate(navigableLessonDates[currentLessonIndex - 1])}
             disabled={currentLessonIndex <= 0}
             className="flex h-8 items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
-            aria-label="이전 레슨일"
           >
             ◀ 이전
           </button>
@@ -286,13 +233,9 @@ export default function ViewerAssignPage() {
 
           <button
             type="button"
-            onClick={handleNextLesson}
-            disabled={
-              currentLessonIndex === -1 ||
-              currentLessonIndex >= navigableLessonDates.length - 1
-            }
+            onClick={() => currentLessonIndex < navigableLessonDates.length - 1 && handleSwitchDate(navigableLessonDates[currentLessonIndex + 1])}
+            disabled={currentLessonIndex === -1 || currentLessonIndex >= navigableLessonDates.length - 1}
             className="flex h-8 items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
-            aria-label="다음 레슨일"
           >
             다음 ▶
           </button>
@@ -311,16 +254,14 @@ export default function ViewerAssignPage() {
           </button>
         </div>
 
-        {/* 달력 팝업 */}
         {calendarOpen && (
           <div className="mt-3 max-w-sm rounded-2xl border border-[#1C2B33]/10 bg-white p-4 shadow-[0_4px_12px_rgba(28,43,51,0.08)]">
             <div className="mb-3 flex items-center justify-between">
               <button
                 type="button"
-                onClick={handlePrevCalMonth}
+                onClick={() => setCalMonth((prev) => (prev === 1 ? (setCalYear((y) => y - 1), 12) : prev - 1))}
                 disabled={!showPast && currentCalYm <= currentYm}
                 className="grid h-7 w-7 place-items-center rounded-full border border-[#1C2B33]/15 text-xs text-[#1C2B33]/70 disabled:opacity-20 hover:bg-[#1C2B33]/5"
-                aria-label="이전 달"
               >
                 ◀
               </button>
@@ -329,9 +270,8 @@ export default function ViewerAssignPage() {
               </span>
               <button
                 type="button"
-                onClick={handleNextCalMonth}
+                onClick={() => setCalMonth((prev) => (prev === 12 ? (setCalYear((y) => y + 1), 1) : prev + 1))}
                 className="grid h-7 w-7 place-items-center rounded-full border border-[#1C2B33]/15 text-xs text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
-                aria-label="다음 달"
               >
                 ▶
               </button>
@@ -339,24 +279,13 @@ export default function ViewerAssignPage() {
 
             <div className="grid grid-cols-7 gap-1 text-center font-[family-name:var(--font-mono-club)] text-xs">
               {['일', '월', '화', '수', '목', '금', '토'].map((dow, idx) => (
-                <div
-                  key={dow}
-                  className={
-                    'py-1 font-semibold ' +
-                    (idx === 2 || idx === 4
-                      ? 'text-[#1C2B33]'
-                      : idx === 0
-                      ? 'text-[#B5482F]/60'
-                      : 'text-[#1C2B33]/40')
-                  }
-                >
+                <div key={dow} className={'py-1 font-semibold ' + (idx === 2 || idx === 4 ? 'text-[#1C2B33]' : idx === 0 ? 'text-[#B5482F]/60' : 'text-[#1C2B33]/40')}>
                   {dow}
                 </div>
               ))}
 
               {calendarDays.map((item, idx) => {
                 if (!item) return <div key={`empty-${idx}`} className="h-8" />;
-
                 const isSelected = selectedDate === item.dateStr;
                 const isDimmed = !showPast && item.isBeforeCurrentMonth;
 
@@ -402,74 +331,90 @@ export default function ViewerAssignPage() {
         )}
       </header>
 
-      {/* 본문 시간표 영역 */}
-      <main className="px-5 py-6 sm:px-8">
-        <div ref={captureRef} className="relative max-w-2xl bg-[#FAFAF7] p-2 rounded-3xl">
-          <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
+      {/* 본문 시간표 영역 (캡처 대상) */}
+      <main className="px-4 py-6 sm:px-8">
+        <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
+          
+          {/* 🎯 캡처 이미지 상단 날짜 헤더 (이게 없어서 날짜가 안나왔던 것) */}
+          {selectedDate && (
+            <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
+              <div className="flex items-baseline gap-2">
+                <span className="font-[family-name:var(--font-display)] text-xl font-bold text-[#1C2B33]">
+                  {selectedDate} ({dowLabel(selectedDate)})
+                </span>
+                <span className="text-xs font-semibold text-[#1C2B33]/60">레슨 시간표</span>
+              </div>
+            </div>
+          )}
 
-          <div className="space-y-3">
-            {slots.map((slot) => {
-              const isFull = slot.assigned.length >= slot.capacity;
-              const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
-              const startH = slot.start_time.slice(0, 5);
+          <div className="relative">
+            <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
-              return (
-                <div key={slot.id} className="relative flex gap-4 sm:gap-6">
-                  <div className="w-[52px] shrink-0 pt-3 text-right sm:w-[68px]">
-                    <span className="font-[family-name:var(--font-mono-club)] text-lg font-bold sm:text-xl">
-                      {startH}
-                    </span>
-                  </div>
+            <div className="space-y-3">
+              {slots.map((slot) => {
+                const isFull = slot.assigned.length >= slot.capacity;
+                const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
+                const startH = slot.start_time.slice(0, 5);
 
-                  <div
-                    className={
-                      'z-10 mt-4 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
-                      (isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
-                    }
-                    style={{ marginLeft: '-6px' }}
-                  />
+                return (
+                  <div key={slot.id} className="relative flex gap-3 sm:gap-6">
+                    <div className="w-[52px] shrink-0 pt-3 text-right sm:w-[68px]">
+                      <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-xl whitespace-nowrap">
+                        {startH}
+                      </span>
+                    </div>
 
-                  <div className="flex-1 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {slot.assigned.map((a) => {
-                        const isCompleted = !!a.isCompleted;
+                    <div
+                      className={
+                        'z-10 mt-4 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
+                        (isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
+                      }
+                      style={{ marginLeft: '-6px' }}
+                    />
 
-                        return (
-                          <span
-                            key={a.lessonId}
-                            className={
-                              'inline-flex h-[34px] items-center rounded-full border px-3.5 text-sm font-medium transition-all select-none ' +
-                              (isCompleted
-                                ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30 line-through'
-                                : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10')
-                            }
+                    <div className="flex-1 rounded-2xl border border-[#1C2B33]/10 bg-white p-2.5 sm:p-3 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                        {slot.assigned.map((a) => {
+                          const isCompleted = !!a.isCompleted;
+
+                          return (
+                            <span
+                              key={a.lessonId}
+                              className={
+                                'inline-flex h-[34px] shrink-0 items-center justify-center rounded-full border px-3.5 text-sm font-medium transition-all select-none ' +
+                                (isCompleted
+                                  ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30 line-through'
+                                  : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10')
+                              }
+                            >
+                              {/* 🎯 캡처 시 이름 잘림 방지 (whitespace-nowrap) */}
+                              <span className="whitespace-nowrap">{a.name}</span>
+                            </span>
+                          );
+                        })}
+
+                        {Array.from({ length: emptySlotsCount }).map((_, idx) => (
+                          <div
+                            key={`empty-${slot.id}-${idx}`}
+                            className="flex h-[34px] w-[64px] shrink-0 items-center justify-center rounded-full border border-dashed border-[#1C2B33]/15 text-xs text-[#1C2B33]/25 select-none whitespace-nowrap"
                           >
-                            {a.name}
-                          </span>
-                        );
-                      })}
-
-                      {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                        <div
-                          key={`empty-${slot.id}-${idx}`}
-                          className="flex h-[34px] w-[64px] items-center justify-center rounded-full border border-dashed border-[#1C2B33]/15 text-xs text-[#1C2B33]/25 select-none"
-                        >
-                          빈자리
-                        </div>
-                      ))}
+                            빈자리
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-            {!loading && selectedDate && slots.length === 0 && (
-              <p className="pl-[68px] text-sm text-[#1C2B33]/40">
-                {activeLessonDateSet.has(selectedDate)
-                  ? '이 날짜에는 시간대 슬롯이 없습니다.'
-                  : '등록된 레슨일이 아닙니다.'}
-              </p>
-            )}
+              {!loading && selectedDate && slots.length === 0 && (
+                <p className="pl-[68px] text-sm text-[#1C2B33]/40">
+                  {activeLessonDateSet.has(selectedDate)
+                    ? '이 날짜에는 시간대 슬롯이 없습니다.'
+                    : '등록된 레슨일이 아닙니다.'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </main>
