@@ -242,14 +242,13 @@ export default function AdminAssignPage() {
     loadData();
   }, [loadData]);
 
-  // 🚀 낙관적 업데이트: 배정 (화면 즉시 반영)
+  // 낙관적 업데이트: 배정
   const handleAssign = async (slotId: number, memberIdStr: string, override: boolean) => {
     if (!memberIdStr || !selectedDate) return;
     const memberId = Number(memberIdStr);
     const targetMember = eligibleMembers.find((m) => m.id === memberId);
     if (!targetMember) return;
 
-    // 1. 화면에 0.01초 만에 즉시 추가
     const tempLessonId = Date.now();
     setSlots((prev) =>
       prev.map((s) => {
@@ -271,7 +270,6 @@ export default function AdminAssignPage() {
       })
     );
 
-    // 2. 백그라운드 서버 저장
     try {
       const res = await fetch('/api/admin/lessons', {
         method: 'POST',
@@ -287,17 +285,17 @@ export default function AdminAssignPage() {
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error || '배정 실패');
-        loadData(true); // 실패 시 롤백
+        loadData(true);
         return;
       }
-      loadData(true); // 성공 시 실제 ID 동기화 (조용히)
+      loadData(true);
     } catch {
       showToast('네트워크 오류');
       loadData(true);
     }
   };
 
-  // 🚀 낙관적 업데이트: 삭제 (화면 즉시 삭제)
+  // 낙관적 업데이트: 삭제
   const handleRemove = async (lessonId: number) => {
     setSlots((prev) =>
       prev.map((s) => ({
@@ -320,7 +318,7 @@ export default function AdminAssignPage() {
     }
   };
 
-  // 🚀 낙관적 업데이트: 완료 토글 (화면 즉시 전환)
+  // 낙관적 업데이트: 완료 토글
   const handleToggleCompleted = async (lessonId: number, currentCompleted: boolean) => {
     setSlots((prev) =>
       prev.map((s) => ({
@@ -351,7 +349,7 @@ export default function AdminAssignPage() {
     }
   };
 
-  // 🚀 낙관적 업데이트: 드래그 앤 드롭 이동
+  // 낙관적 업데이트: 드래그 앤 드롭 이동
   const handleDropToSlot = async (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem || !selectedDate) return;
@@ -375,7 +373,6 @@ export default function AdminAssignPage() {
 
     if (!movingItem) return;
 
-    // 즉시 이동 반영
     setSlots((prev) =>
       prev.map((s) => {
         if (s.id === draggedItem.sourceSlotId) {
@@ -632,9 +629,7 @@ export default function AdminAssignPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setCopyPanelOpen((v) => !v);
-                }}
+                onClick={() => setCopyPanelOpen((v) => !v)}
                 className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
               >
                 {copyPanelOpen ? '복사 닫기' : '날짜복사'}
@@ -707,6 +702,7 @@ export default function AdminAssignPage() {
               const showAll = !!showAllOverride[slot.id];
               const options = eligibleMembers.filter((m) => showAll || !m.alreadyAssignedToday);
               const isFull = slot.assigned.length >= slot.capacity;
+              const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
               const startH = slot.start_time.slice(0, 5);
               const isDragOver = dragOverSlotId === slot.id;
 
@@ -749,7 +745,8 @@ export default function AdminAssignPage() {
                         : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
                     }
                   >
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 배정 완료된 회원 칩들 */}
                       {slot.assigned.map((a) => {
                         const isThisDragging = draggedItem?.lessonId === a.lessonId;
                         const isCompleted = !!a.isCompleted;
@@ -771,12 +768,12 @@ export default function AdminAssignPage() {
                               setDragOverSlotId(null);
                             }}
                             className={
-                              'group flex cursor-grab items-center gap-1.5 rounded-full border py-1.5 pr-1.5 pl-3 text-sm transition-colors select-none active:cursor-grabbing ' +
+                              'group inline-flex h-[34px] min-w-[92px] cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none active:cursor-grabbing ' +
                               (isThisDragging
                                 ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
                                 : isCompleted
                                 ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
-                                : 'bg-[#FAFAF7] text-[#1C2B33] border-transparent hover:bg-[#1C2B33]/5')
+                                : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                             }
                             title="클릭: 완료/출석 토글 / 마우스 드래그: 시간대 이동"
                           >
@@ -787,7 +784,7 @@ export default function AdminAssignPage() {
                                 handleToggleCompleted(a.lessonId, isCompleted);
                               }}
                               className={
-                                'cursor-pointer text-left font-medium text-sm transition-colors ' +
+                                'cursor-pointer truncate font-medium text-sm transition-colors ' +
                                 (isCompleted ? 'line-through text-[#1F6F63]' : 'text-[#1C2B33]')
                               }
                             >
@@ -811,7 +808,7 @@ export default function AdminAssignPage() {
                                 e.stopPropagation();
                                 handleRemove(a.lessonId);
                               }}
-                              className="grid h-5 w-5 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
+                              className="grid h-4 w-4 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
                               aria-label="배정 즉시 삭제"
                               title="배정 즉시 삭제"
                             >
@@ -821,8 +818,9 @@ export default function AdminAssignPage() {
                         );
                       })}
 
-                      {!isFull && (
-                        <>
+                      {/* 🎯 처음부터 정원(기본 2개)만큼 '이름' 배정 버튼 노출 & 칩과 동일한 크기(h-[34px], min-w-[92px]) */}
+                      {Array.from({ length: emptySlotsCount }).map((_, idx) => (
+                        <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block">
                           <select
                             value=""
                             onChange={(e) => {
@@ -830,29 +828,41 @@ export default function AdminAssignPage() {
                                 handleAssign(slot.id, e.target.value, showAll);
                               }
                             }}
-                            className="rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1.5 text-sm"
+                            className="h-[34px] min-w-[92px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 px-3.5 pr-6 text-center text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
                           >
-                            <option value="">+ 배정</option>
+                            <option value="" disabled hidden>
+                              이름
+                            </option>
                             {options.map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.name} {m.alreadyAssignedToday ? '(중복)' : ''}
                               </option>
                             ))}
                           </select>
+                          {/* 미니멀 드롭다운 화살표 아이콘 */}
+                          <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-[#1C2B33]/40">
+                            ▼
+                          </div>
+                        </div>
+                      ))}
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setShowAllOverride((prev) => ({ ...prev, [slot.id]: !showAll }))
-                            }
-                            className={
-                              'rounded-full px-2.5 py-1.5 text-xs font-medium ' +
-                              (showAll ? 'bg-[#C98A2B] text-white' : 'bg-[#1C2B33]/5 text-[#1C2B33]/45')
-                            }
-                          >
-                            중복
-                          </button>
-                        </>
+                      {/* 중복 토글 버튼 */}
+                      {!isFull && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowAllOverride((prev) => ({ ...prev, [slot.id]: !showAll }))
+                          }
+                          className={
+                            'h-[34px] rounded-full px-2.5 text-xs font-medium transition-colors ' +
+                            (showAll
+                              ? 'bg-[#C98A2B] text-white'
+                              : 'bg-[#1C2B33]/5 text-[#1C2B33]/45 hover:bg-[#1C2B33]/10')
+                          }
+                          title="당일 중복 배정 수강생 포함 토글"
+                        >
+                          중복
+                        </button>
                       )}
                     </div>
                   </div>
