@@ -96,8 +96,13 @@ export default function AdminAssignPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
+  // 마우스 & 터치 공용 드래그 상태
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
+
+  // 모바일 터치 드래그 위치 추적용 상태
+  const [touchPos, setTouchPos] = useState<{ x: number; y: number } | null>(null);
+  const isTouchDraggingRef = useRef(false);
 
   const [copyPanelOpen, setCopyPanelOpen] = useState(false);
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
@@ -328,35 +333,82 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 🎯 정원 마감 제한 없이 자유롭게 드롭 허용
+  // 슬롯 간 이동 공통 처리 함수
+  const moveMemberToSlot = useCallback(
+    (movedLessonId: number | string, sourceSlotId: number, targetSlotId: number) => {
+      if (sourceSlotId === targetSlotId) return;
+
+      const movingItem = slots
+        .flatMap((s) => s.assigned)
+        .find((a) => a.lessonId === movedLessonId);
+
+      if (!movingItem) return;
+
+      setSlots((prev) =>
+        prev.map((s) => {
+          if (s.id === sourceSlotId) {
+            return { ...s, assigned: s.assigned.filter((a) => a.lessonId !== movedLessonId) };
+          }
+          if (s.id === targetSlotId) {
+            return { ...s, assigned: [...s.assigned, movingItem] };
+          }
+          return s;
+        })
+      );
+    },
+    [slots]
+  );
+
+  // 🖱️ PC 마우스 드롭
   const handleDropToSlot = (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem) return;
+    moveMemberToSlot(draggedItem.lessonId, draggedItem.sourceSlotId, targetSlotId);
+    setDraggedItem(null);
+  };
 
-    if (draggedItem.sourceSlotId === targetSlotId) {
-      setDraggedItem(null);
-      return;
+  // 📱 모바일 터치 드래그 이벤트 핸들러
+  const handleTouchStart = (
+    e: React.TouchEvent,
+    lessonId: number | string,
+    sourceSlotId: number,
+    memberName: string
+  ) => {
+    const touch = e.touches[0];
+    isTouchDraggingRef.current = true;
+    setDraggedItem({ lessonId, sourceSlotId, memberName });
+    setTouchPos({ x: touch.clientX, y: touch.clientY });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isTouchDraggingRef.current || !draggedItem) return;
+    const touch = e.touches[0];
+    setTouchPos({ x: touch.clientX, y: touch.clientY });
+
+    // 손가락 위치 아래에 있는 슬롯 찾기
+    const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    const slotElement = elementBelow?.closest('[data-slot-id]');
+    if (slotElement) {
+      const slotId = Number(slotElement.getAttribute('data-slot-id'));
+      if (!isNaN(slotId)) {
+        setDragOverSlotId(slotId);
+      }
+    } else {
+      setDragOverSlotId(null);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!isTouchDraggingRef.current || !draggedItem) return;
+
+    if (dragOverSlotId !== null && dragOverSlotId !== draggedItem.sourceSlotId) {
+      moveMemberToSlot(draggedItem.lessonId, draggedItem.sourceSlotId, dragOverSlotId);
     }
 
-    const movedLessonId = draggedItem.lessonId;
-    const movingItem = slots
-      .flatMap((s) => s.assigned)
-      .find((a) => a.lessonId === movedLessonId);
-
-    if (!movingItem) return;
-
-    setSlots((prev) =>
-      prev.map((s) => {
-        if (s.id === draggedItem.sourceSlotId) {
-          return { ...s, assigned: s.assigned.filter((a) => a.lessonId !== movedLessonId) };
-        }
-        if (s.id === targetSlotId) {
-          return { ...s, assigned: [...s.assigned, movingItem] };
-        }
-        return s;
-      })
-    );
+    isTouchDraggingRef.current = false;
     setDraggedItem(null);
+    setDragOverSlotId(null);
+    setTouchPos(null);
   };
 
   const handleResetDay = () => {
@@ -370,7 +422,6 @@ export default function AdminAssignPage() {
     showToast('원래대로 되돌렸습니다.');
   };
 
-  // 🎯 정원 초과 시 저장 차단 검증
   const handleSaveChanges = async () => {
     if (!selectedDate || saving) return;
 
@@ -507,7 +558,11 @@ export default function AdminAssignPage() {
   const hasAnyAssignment = slots.some((s) => s.assigned.length > 0);
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] pb-28 text-[#1C2B33]">
+    <div
+      className="min-h-screen bg-[#FAFAF7] pb-28 text-[#1C2B33]"
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
         <div className="flex flex-wrap items-center gap-3">
           <AdminDrawer />
@@ -765,8 +820,9 @@ export default function AdminAssignPage() {
                     style={{ marginLeft: '-6px' }}
                   />
 
-                  {/* 🎯 정원 초과 시 붉은색 테두리 + 배경 경고 스타일 */}
+                  {/* 🎯 슬롯 컨테이너 (터치 타겟 식별용 data-slot-id 추가) */}
                   <div
+                    data-slot-id={slot.id}
                     onDragOver={(e) => {
                       e.preventDefault();
                       if (dragOverSlotId !== slot.id) {
@@ -785,7 +841,7 @@ export default function AdminAssignPage() {
                     className={
                       'relative flex-1 rounded-2xl border p-3 transition-all ' +
                       (isDragOver
-                        ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/5 ring-2 ring-[#1F6F63]/20 shadow-md'
+                        ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-md'
                         : isOver
                         ? 'border-[#B5482F] bg-[#B5482F]/5 shadow-sm'
                         : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
@@ -820,8 +876,12 @@ export default function AdminAssignPage() {
                               setDraggedItem(null);
                               setDragOverSlotId(null);
                             }}
+                            // 📱 모바일 터치 이벤트 연결
+                            onTouchStart={(e) =>
+                              handleTouchStart(e, a.lessonId, slot.id, a.name)
+                            }
                             className={
-                              'group inline-flex h-[34px] cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none active:cursor-grabbing ' +
+                              'group inline-flex h-[34px] cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none touch-none active:cursor-grabbing ' +
                               (isThisDragging
                                 ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
                                 : isCompleted
@@ -830,7 +890,7 @@ export default function AdminAssignPage() {
                                 ? 'bg-white text-[#B5482F] border-[#B5482F]/40 font-semibold'
                                 : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                             }
-                            title="클릭: 완료/출석 토글 / 마우스 드래그: 시간대 이동"
+                            title="터치/드래그하여 다른 시간대로 이동"
                           >
                             <button
                               type="button"
@@ -932,6 +992,21 @@ export default function AdminAssignPage() {
           </div>
         </div>
       </main>
+
+      {/* 📱 모바일 터치 드래그 중 손가락을 따라다니는 플로팅 배지 */}
+      {touchPos && draggedItem && (
+        <div
+          style={{
+            left: touchPos.x,
+            top: touchPos.y,
+            transform: 'translate(-50%, -120%)',
+          }}
+          className="pointer-events-none fixed z-50 flex items-center gap-1.5 rounded-full bg-[#1C2B33] px-3.5 py-1.5 text-sm font-semibold text-white shadow-2xl ring-2 ring-white/50 animate-pulse"
+        >
+          <span>✋</span>
+          <span>{draggedItem.memberName}</span>
+        </div>
+      )}
 
       {/* 🎯 하단 플로팅 저장 바 (초과 시 비활성화 & 안내) */}
       {showSaveBar && isDirty && (
