@@ -49,7 +49,6 @@ function todayStr() {
   );
 }
 
-// 🎯 화면 표시용 전화번호 하이픈 헬퍼 함수
 function displayPhone(phoneStr: string | null | undefined): string {
   if (!phoneStr) return '-';
   const clean = phoneStr.replace(/[^0-9]/g, '');
@@ -90,7 +89,6 @@ export default function AdminAssignPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // 드래그 앤 드롭 상태
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
 
@@ -217,20 +215,18 @@ export default function AdminAssignPage() {
     });
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!selectedDate) {
       setSlots([]);
       setEligibleMembers([]);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error || '조회 실패');
-        setSlots([]);
-        setEligibleMembers([]);
         return;
       }
       setSlots(data.slots);
@@ -238,7 +234,7 @@ export default function AdminAssignPage() {
     } catch {
       showToast('네트워크 오류가 발생했습니다.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [selectedDate, showToast]);
 
@@ -246,38 +242,95 @@ export default function AdminAssignPage() {
     loadData();
   }, [loadData]);
 
-  const handleAssign = async (slotId: number, memberId: string, override: boolean) => {
-    if (!memberId || !selectedDate) return;
+  // 🚀 낙관적 업데이트: 배정 (화면 즉시 반영)
+  const handleAssign = async (slotId: number, memberIdStr: string, override: boolean) => {
+    if (!memberIdStr || !selectedDate) return;
+    const memberId = Number(memberIdStr);
+    const targetMember = eligibleMembers.find((m) => m.id === memberId);
+    if (!targetMember) return;
 
-    const res = await fetch('/api/admin/lessons', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lessonDate: selectedDate,
-        timeSlotId: slotId,
-        memberId: Number(memberId),
-        override,
-      }),
-    });
+    // 1. 화면에 0.01초 만에 즉시 추가
+    const tempLessonId = Date.now();
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          assigned: [
+            ...s.assigned,
+            {
+              lessonId: tempLessonId,
+              memberId: targetMember.id,
+              name: targetMember.name,
+              department: targetMember.department,
+              phone: targetMember.phone,
+              isCompleted: false,
+            },
+          ],
+        };
+      })
+    );
 
-    const data = await res.json();
-    if (!res.ok) {
-      showToast(data.error || '배정 실패');
-      return;
+    // 2. 백그라운드 서버 저장
+    try {
+      const res = await fetch('/api/admin/lessons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonDate: selectedDate,
+          timeSlotId: slotId,
+          memberId,
+          override,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || '배정 실패');
+        loadData(true); // 실패 시 롤백
+        return;
+      }
+      loadData(true); // 성공 시 실제 ID 동기화 (조용히)
+    } catch {
+      showToast('네트워크 오류');
+      loadData(true);
     }
-    loadData();
   };
 
+  // 🚀 낙관적 업데이트: 삭제 (화면 즉시 삭제)
   const handleRemove = async (lessonId: number) => {
-    const res = await fetch('/api/admin/lessons?id=' + lessonId, { method: 'DELETE' });
-    if (!res.ok) {
-      showToast('삭제 실패');
-      return;
+    setSlots((prev) =>
+      prev.map((s) => ({
+        ...s,
+        assigned: s.assigned.filter((a) => a.lessonId !== lessonId),
+      }))
+    );
+
+    try {
+      const res = await fetch('/api/admin/lessons?id=' + lessonId, { method: 'DELETE' });
+      if (!res.ok) {
+        showToast('삭제 실패');
+        loadData(true);
+        return;
+      }
+      loadData(true);
+    } catch {
+      showToast('네트워크 오류');
+      loadData(true);
     }
-    loadData();
   };
 
+  // 🚀 낙관적 업데이트: 완료 토글 (화면 즉시 전환)
   const handleToggleCompleted = async (lessonId: number, currentCompleted: boolean) => {
+    setSlots((prev) =>
+      prev.map((s) => ({
+        ...s,
+        assigned: s.assigned.map((a) =>
+          a.lessonId === lessonId ? { ...a, isCompleted: !currentCompleted } : a
+        ),
+      }))
+    );
+
     try {
       const res = await fetch('/api/admin/lessons', {
         method: 'PATCH',
@@ -290,14 +343,15 @@ export default function AdminAssignPage() {
 
       if (!res.ok) {
         showToast('상태 변경 실패');
-        return;
+        loadData(true);
       }
-      loadData();
     } catch {
       showToast('네트워크 오류가 발생했습니다.');
+      loadData(true);
     }
   };
 
+  // 🚀 낙관적 업데이트: 드래그 앤 드롭 이동
   const handleDropToSlot = async (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem || !selectedDate) return;
@@ -314,12 +368,33 @@ export default function AdminAssignPage() {
       return;
     }
 
+    const movedLessonId = draggedItem.lessonId;
+    const movingItem = slots
+      .flatMap((s) => s.assigned)
+      .find((a) => a.lessonId === movedLessonId);
+
+    if (!movingItem) return;
+
+    // 즉시 이동 반영
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id === draggedItem.sourceSlotId) {
+          return { ...s, assigned: s.assigned.filter((a) => a.lessonId !== movedLessonId) };
+        }
+        if (s.id === targetSlotId) {
+          return { ...s, assigned: [...s.assigned, movingItem] };
+        }
+        return s;
+      })
+    );
+    setDraggedItem(null);
+
     try {
       const res = await fetch('/api/admin/lessons', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lessonId: draggedItem.lessonId,
+          lessonId: movedLessonId,
           targetTimeSlotId: targetSlotId,
           lessonDate: selectedDate,
         }),
@@ -328,14 +403,11 @@ export default function AdminAssignPage() {
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error || '시간대 이동 실패');
-        return;
+        loadData(true);
       }
-
-      loadData();
     } catch {
       showToast('이동 중 오류가 발생했습니다.');
-    } finally {
-      setDraggedItem(null);
+      loadData(true);
     }
   };
 
@@ -394,6 +466,7 @@ export default function AdminAssignPage() {
       showToast('선택한 날짜에 성공적으로 복사되었습니다.');
       setCopyTargets(new Set());
       setCopyPanelOpen(false);
+      loadData();
     } catch {
       showToast('네트워크 오류');
     } finally {
@@ -559,7 +632,9 @@ export default function AdminAssignPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setCopyPanelOpen((v) => !v)}
+                onClick={() => {
+                  setCopyPanelOpen((v) => !v);
+                }}
                 className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
               >
                 {copyPanelOpen ? '복사 닫기' : '날짜복사'}
@@ -651,7 +726,6 @@ export default function AdminAssignPage() {
                     style={{ marginLeft: '-6px' }}
                   />
 
-                  {/* Drop 영역 컨테이너 */}
                   <div
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -720,7 +794,6 @@ export default function AdminAssignPage() {
                               {a.name}
                             </button>
 
-                            {/* 🎯 정보 켜졌을 때 하이픈 자동 포맷팅 전화번호 노출 */}
                             {showDetailInfo && (
                               <span
                                 className={
@@ -798,7 +871,6 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
-      {/* 1초 플로팅 토스트 배너 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
