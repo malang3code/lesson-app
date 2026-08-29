@@ -1,88 +1,157 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-export async function POST(req: Request) {
-  const { lessonDate, timeSlotId, memberId, override } = await req.json();
+// 배정 추가 (POST)
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { lessonDate, timeSlotId, memberId, override } = body;
 
-  if (!lessonDate || !timeSlotId || !memberId) {
-    return NextResponse.json({ error: '필수 값이 누락되었습니다' }, { status: 400 });
+    if (!lessonDate || !timeSlotId || !memberId) {
+      return NextResponse.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 });
+    }
+
+    if (!override) {
+      const { data: existing, error: existErr } = await supabaseAdmin
+        .from('lessons')
+        .select('id')
+        .eq('lesson_date', lessonDate)
+        .eq('member_id', memberId);
+
+      if (existErr) throw existErr;
+      if (existing && existing.length > 0) {
+        return NextResponse.json(
+          { error: '해당 회원은 이 날짜에 이미 다른 시간대에 배정되어 있습니다.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const { data: slot, error: slotErr } = await supabaseAdmin
+      .from('time_slots')
+      .select('capacity')
+      .eq('id', timeSlotId)
+      .single();
+
+    if (slotErr) throw slotErr;
+
+    const { count, error: countErr } = await supabaseAdmin
+      .from('lessons')
+      .select('*', { count: 'exact', head: true })
+      .eq('lesson_date', lessonDate)
+      .eq('time_slot_id', timeSlotId);
+
+    if (countErr) throw countErr;
+
+    if (count !== null && slot && count >= slot.capacity) {
+      return NextResponse.json({ error: '해당 시간대의 정원이 마감되었습니다.' }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('lessons')
+      .insert({
+        lesson_date: lessonDate,
+        time_slot_id: timeSlotId,
+        member_id: memberId,
+        is_completed: false,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true, lesson: data });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const { data: slot, error: slotErr } = await supabaseAdmin
-    .from('time_slots')
-    .select('capacity')
-    .eq('id', timeSlotId)
-    .single();
-
-  if (slotErr || !slot) {
-    return NextResponse.json({ error: '시간대를 찾을 수 없습니다' }, { status: 404 });
-  }
-
-  const { count, error: countErr } = await supabaseAdmin
-    .from('lessons')
-    .select('id', { count: 'exact', head: true })
-    .eq('lesson_date', lessonDate)
-    .eq('time_slot_id', timeSlotId);
-
-  if (countErr) {
-    return NextResponse.json({ error: '조회 실패' }, { status: 500 });
-  }
-
-  if ((count ?? 0) >= slot.capacity) {
-    return NextResponse.json({ error: '해당 슬롯 정원이 가득 찼습니다' }, { status: 409 });
-  }
-
-  const { data: sameDayLessons, error: sameDayErr } = await supabaseAdmin
-    .from('lessons')
-    .select('id')
-    .eq('lesson_date', lessonDate)
-    .eq('member_id', memberId);
-
-  if (sameDayErr) {
-    return NextResponse.json({ error: '조회 실패' }, { status: 500 });
-  }
-
-  if ((sameDayLessons?.length ?? 0) > 0 && !override) {
-    return NextResponse.json(
-      { error: '이미 같은 날 배정된 회원입니다. 예외 처리가 필요합니다.' },
-      { status: 409 }
-    );
-  }
-
-  const { error: insertErr } = await supabaseAdmin.from('lessons').insert({
-    lesson_date: lessonDate,
-    time_slot_id: timeSlotId,
-    member_id: memberId,
-    is_duplicate_override: (sameDayLessons?.length ?? 0) > 0,
-  });
-
-  if (insertErr) {
-    return NextResponse.json({ error: '배정 실패: ' + insertErr.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ success: true });
 }
 
-export async function DELETE(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const lessonId = searchParams.get('id');
-  const date = searchParams.get('date');
+// 드래그 슬롯 이동 또는 완료 상태 토글 (PATCH)
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { lessonId, targetTimeSlotId, lessonDate, isCompleted } = body;
 
-  if (lessonId) {
-    const { error } = await supabaseAdmin.from('lessons').delete().eq('id', lessonId);
-    if (error) {
-      return NextResponse.json({ error: '삭제 실패' }, { status: 500 });
+    if (!lessonId) {
+      return NextResponse.json({ error: 'lessonId가 필요합니다.' }, { status: 400 });
     }
-    return NextResponse.json({ success: true });
-  }
 
-  if (date) {
-    const { error } = await supabaseAdmin.from('lessons').delete().eq('lesson_date', date);
-    if (error) {
-      return NextResponse.json({ error: '전체 삭제 실패' }, { status: 500 });
+    // 1. 레슨 완료(is_completed) 토글 요청인 경우
+    if (typeof isCompleted === 'boolean') {
+      const { data, error } = await supabaseAdmin
+        .from('lessons')
+        .update({ is_completed: isCompleted })
+        .eq('id', lessonId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return NextResponse.json({ success: true, lesson: data });
     }
-    return NextResponse.json({ success: true });
-  }
 
-  return NextResponse.json({ error: 'id 또는 date 파라미터가 필요합니다' }, { status: 400 });
+    // 2. 슬롯 이동 요청인 경우
+    if (targetTimeSlotId && lessonDate) {
+      const { data: slot, error: slotErr } = await supabaseAdmin
+        .from('time_slots')
+        .select('capacity')
+        .eq('id', targetTimeSlotId)
+        .single();
+
+      if (slotErr) throw slotErr;
+
+      const { count, error: countErr } = await supabaseAdmin
+        .from('lessons')
+        .select('*', { count: 'exact', head: true })
+        .eq('lesson_date', lessonDate)
+        .eq('time_slot_id', targetTimeSlotId);
+
+      if (countErr) throw countErr;
+
+      if (count !== null && slot && count >= slot.capacity) {
+        return NextResponse.json({ error: '이동하려는 시간대의 정원이 가득 찼습니다.' }, { status: 400 });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('lessons')
+        .update({ time_slot_id: targetTimeSlotId })
+        .eq('id', lessonId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return NextResponse.json({ success: true, lesson: data });
+    }
+
+    return NextResponse.json({ error: '올바른 수정 파라미터가 아닙니다.' }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// 배정 즉시 삭제 (DELETE)
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    const date = searchParams.get('date');
+
+    if (id) {
+      const { error } = await supabaseAdmin.from('lessons').delete().eq('id', Number(id));
+      if (error) throw error;
+      return NextResponse.json({ success: true, id });
+    }
+
+    if (date) {
+      const { error } = await supabaseAdmin.from('lessons').delete().eq('lesson_date', date);
+      if (error) throw error;
+      return NextResponse.json({ success: true, date });
+    }
+
+    return NextResponse.json({ error: 'id 또는 date 파라미터가 필요합니다.' }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

@@ -1,186 +1,429 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import AdminDrawer from '@/components/AdminDrawer';
 
-function pad(n: number) {
-  return String(n).padStart(2, '0');
-}
+type DayInfo = {
+  date: string;
+  day: number;
+  dow: number;
+  isTueThu: boolean;
+  isActive: boolean;
+  hasAssignments: boolean;
+};
 
-function buildMonthList() {
-  const now = new Date();
-  const list = [];
-  for (let i = 0; i < 6; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    list.push({
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,
-      label: (d.getMonth() + 1) + '월',
+type MonthData = {
+  year: number;
+  month: number;
+  label: string;
+  days: (DayInfo | null)[];
+};
+
+function buildMonth(
+  year: number,
+  month: number,
+  activeSet: Set<string>,
+  assignmentCounts: Record<string, number>
+): MonthData {
+  const firstDow = new Date(year, month - 1, 1).getDay();
+  const lastDate = new Date(year, month, 0).getDate();
+
+  const days: (DayInfo | null)[] = [];
+  for (let i = 0; i < firstDow; i++) {
+    days.push(null);
+  }
+
+  for (let d = 1; d <= lastDate; d++) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dow = new Date(year, month - 1, d).getDay();
+    const isTueThu = dow === 2 || dow === 4;
+
+    days.push({
+      date: dateStr,
+      day: d,
+      dow,
+      isTueThu,
+      isActive: activeSet.has(dateStr),
+      hasAssignments: (assignmentCounts[dateStr] || 0) > 0,
     });
   }
-  return list;
+
+  return {
+    year,
+    month,
+    label: `${year}년 ${month}월`,
+    days,
+  };
 }
 
-export default function AdminCalendarPage() {
-  const MONTHS = useMemo(() => buildMonthList(), []);
-  const [selectedMonth, setSelectedMonth] = useState(MONTHS[0]);
+export default function CalendarAdminPage() {
   const [activeDates, setActiveDates] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [assignmentCounts, setAssignmentCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [showPast, setShowPast] = useState(false);
+  const [pastMonthIndex, setPastMonthIndex] = useState(0);
+
+  const today = useMemo(() => new Date(), []);
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+  const currentYmStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+  const futureMonthsList = useMemo(() => {
+    const list: { year: number; month: number }[] = [];
+    for (let i = 0; i < 3; i++) {
+      let m = currentMonth + i;
+      let y = currentYear;
+      if (m > 12) {
+        y += Math.floor((m - 1) / 12);
+        m = ((m - 1) % 12) + 1;
+      }
+      list.push({ year: y, month: m });
+    }
+    return list;
+  }, [currentYear, currentMonth]);
 
   const loadDates = useCallback(async () => {
-    setLoading(true);
-    setError('');
     try {
-      const res = await fetch(
-        '/api/admin/lesson-dates?year=' + selectedMonth.year + '&month=' + selectedMonth.month
-      );
+      const res = await fetch('/api/admin/lesson-dates');
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || '조회 실패');
-        return;
+      if (res.ok) {
+        setActiveDates(new Set(data.dates ?? []));
+        setAssignmentCounts(data.assignmentCounts ?? {});
+      } else {
+        setMessage('조회 실패: ' + (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error));
       }
-      setActiveDates(new Set(data.dates));
-    } catch (e) {
-      setError('네트워크 오류');
+    } catch (e: unknown) {
+      setMessage('데이터 불러오기 실패: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth]);
+  }, []);
 
   useEffect(() => {
     loadDates();
   }, [loadDates]);
 
-  const toggleDate = async (dateStr: string) => {
-    const res = await fetch('/api/admin/lesson-dates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateStr }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.error || '처리 실패');
-      return;
-    }
-    setActiveDates((prev) => {
-      const next = new Set(prev);
-      if (data.active) {
-        next.add(dateStr);
-      } else {
-        next.delete(dateStr);
+  const availablePastMonths = useMemo(() => {
+    const ymSet = new Set<string>();
+    activeDates.forEach((d) => {
+      const ym = d.slice(0, 7);
+      if (ym < currentYmStr) {
+        ymSet.add(ym);
       }
-      return next;
     });
+
+    const sortedYms = Array.from(ymSet).sort().reverse();
+    return sortedYms.map((ym) => {
+      const [y, m] = ym.split('-').map(Number);
+      return { year: y, month: m };
+    });
+  }, [activeDates, currentYmStr]);
+
+  useEffect(() => {
+    setPastMonthIndex(0);
+  }, [showPast]);
+
+  const displayedMonths = useMemo(() => {
+    if (!showPast) {
+      return futureMonthsList.map(({ year, month }) =>
+        buildMonth(year, month, activeDates, assignmentCounts)
+      );
+    }
+    if (availablePastMonths.length === 0) return [];
+    const target = availablePastMonths[pastMonthIndex] ?? availablePastMonths[0];
+    return [buildMonth(target.year, target.month, activeDates, assignmentCounts)];
+  }, [showPast, futureMonthsList, availablePastMonths, pastMonthIndex, activeDates, assignmentCounts]);
+
+  const toggleDate = async (dateStr: string, currentlyActive: boolean, force = false) => {
+    const willActive = !currentlyActive;
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const res = await fetch('/api/admin/lesson-dates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: dateStr, isActive: willActive, forceDelete: force }),
+      });
+
+      const data = await res.json();
+
+      if (res.status === 409 && data.requireConfirm) {
+        setSaving(false);
+        const confirmed = window.confirm(
+          `⚠️ [주의] ${dateStr}에 ${data.assignmentCount}건의 수강생 배정 내역이 있습니다.\n\n` +
+          `레슨일을 해제하면 해당 배정 데이터가 영구 삭제됩니다.\n계속 진행하시겠습니까?`
+        );
+
+        if (confirmed) {
+          toggleDate(dateStr, currentlyActive, true);
+        }
+        return;
+      }
+
+      if (!res.ok) {
+        const errText = typeof data.error === 'object' ? JSON.stringify(data.error) : (data.error || '저장 실패');
+        setMessage('오류 발생: ' + errText);
+        return;
+      }
+
+      await loadDates();
+    } catch (e: unknown) {
+      setMessage('네트워크 오류: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const year = selectedMonth.year;
-  const month = selectedMonth.month;
-  const firstDay = new Date(year, month - 1, 1);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const startWeekday = firstDay.getDay();
+  const autoSelectTueThu = async (year: number, month: number) => {
+    const lastDate = new Date(year, month, 0).getDate();
+    const tueThus: string[] = [];
 
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < startWeekday; i++) {
-    cells.push(null);
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push(d);
-  }
+    for (let d = 1; d <= lastDate; d++) {
+      const dow = new Date(year, month - 1, d).getDay();
+      if (dow === 2 || dow === 4) {
+        tueThus.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+      }
+    }
+
+    setSaving(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/admin/lesson-dates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dates: tueThus, isActive: true }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await loadDates();
+        setMessage(`${year}년 ${month}월 화/목이 일괄 등록되었습니다.`);
+      } else {
+        const errText = typeof data.error === 'object' ? JSON.stringify(data.error) : (data.error || '일괄 등록 실패');
+        setMessage('오류: ' + errText);
+      }
+    } catch (e: unknown) {
+      setMessage('네트워크 오류: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearMonth = async (year: number, month: number) => {
+    const lastDate = new Date(year, month, 0).getDate();
+    const monthDates: string[] = [];
+
+    for (let d = 1; d <= lastDate; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (activeDates.has(dateStr)) {
+        monthDates.push(dateStr);
+      }
+    }
+
+    if (monthDates.length === 0) {
+      setMessage('해제할 레슨일이 없습니다.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/admin/lesson-dates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dates: monthDates, isActive: false }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        await loadDates();
+
+        const deletedCount = (data.deletedDates ?? []).length;
+        const preservedCount = data.preservedCount ?? 0;
+
+        if (deletedCount === 0 && preservedCount > 0) {
+          setMessage(`배정 데이터가 있는 ${preservedCount}개 레슨일은 보존되었으며, 해제할 빈 날짜가 없습니다.`);
+        } else if (preservedCount > 0) {
+          setMessage(`배정 데이터가 없는 ${deletedCount}개 레슨일이 해제되었습니다. (${preservedCount}개 일자 보존)`);
+        } else {
+          setMessage(`${year}년 ${month}월 레슨일이 전체 해제되었습니다.`);
+        }
+      } else {
+        const errText = typeof data.error === 'object' ? JSON.stringify(data.error) : (data.error || '해제 실패');
+        setMessage('오류: ' + errText);
+      }
+    } catch (e: unknown) {
+      setMessage('네트워크 오류: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#FAFAF7] text-[#1C2B33]">
-      <header className="border-b border-[#1C2B33]/10 px-5 pt-8 pb-6 sm:px-8">
-        <p className="font-[family-name:var(--font-mono-club)] text-xs tracking-[0.25em] text-[#1C2B33]/50 uppercase">
-          Admin Schedule
-        </p>
-        <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
-          월별 레슨일 정하기
-        </h1>
-        <a
-          href="/admin/assign"
-          className="mt-2 inline-block text-sm text-[#1C2B33]/50 underline underline-offset-2"
-        >
-          배정판으로 돌아가기
-        </a>
-        <p className="mt-2 text-sm text-[#1C2B33]/50">
-          화요일 목요일 중 실제로 레슨하는 날짜만 눌러서 켜주세요.
-        </p>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {MONTHS.map(function (m) {
-            const isSelected = selectedMonth.month === m.month && selectedMonth.year === m.year;
-            const cls = isSelected
-              ? 'rounded-full px-4 py-1.5 text-sm font-medium bg-[#1C2B33] text-white'
-              : 'rounded-full px-4 py-1.5 text-sm font-medium border border-[#1C2B33]/15 bg-white text-[#1C2B33]/70';
-            return (
-              <button
-                key={m.year + '-' + m.month}
-                onClick={() => setSelectedMonth(m)}
-                className={cls}
-                type="button"
-              >
-                {m.year}.{m.label}
-              </button>
-            );
-          })}
+      <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
+        {/* 🎯 좌측 햄버거 메뉴 + 타이틀 및 돌아가기 */}
+        <div className="flex items-center gap-3">
+          <AdminDrawer />
+          <div>
+            <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
+              레슨일 관리
+            </h1>
+            <a
+              href="/admin/assign"
+              className="mt-1 inline-block text-sm text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
+            >
+              ← 돌아가기
+            </a>
+          </div>
         </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowPast((prev) => !prev)}
+            className={
+              'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ' +
+              (showPast
+                ? 'bg-[#8F3A24] text-white shadow-sm'
+                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
+            }
+          >
+            {showPast ? '✓ 과거 달력 보는 중' : '과거 날짜 보기'}
+          </button>
+
+          {showPast && availablePastMonths.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setPastMonthIndex((prev) => Math.min(prev + 1, availablePastMonths.length - 1))
+                }
+                disabled={pastMonthIndex >= availablePastMonths.length - 1}
+                className="grid h-8 w-8 place-items-center rounded-full border border-[#1C2B33]/15 bg-white text-xs disabled:opacity-30 hover:bg-[#1C2B33]/5"
+                title="더 이전 과거 달"
+              >
+                ◀
+              </button>
+              <span className="font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/60">
+                {pastMonthIndex + 1} / {availablePastMonths.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPastMonthIndex((prev) => Math.max(prev - 1, 0))}
+                disabled={pastMonthIndex <= 0}
+                className="grid h-8 w-8 place-items-center rounded-full border border-[#1C2B33]/15 bg-white text-xs disabled:opacity-30 hover:bg-[#1C2B33]/5"
+                title="더 최근 과거 달"
+              >
+                ▶
+              </button>
+            </div>
+          )}
+        </div>
+
+        {message && (
+          <div className="mt-4 rounded-xl border border-[#1C2B33]/15 bg-white px-4 py-2.5 text-sm font-medium text-[#1C2B33] shadow-sm">
+            {message}
+          </div>
+        )}
+        {saving && <p className="mt-2 text-xs text-[#1C2B33]/50">저장 중...</p>}
       </header>
 
       <main className="px-5 py-6 sm:px-8">
-        {error ? <p className="mb-3 text-sm text-[#B5482F]">{error}</p> : null}
-        {loading ? <p className="mb-3 text-sm text-[#1C2B33]/40">불러오는 중...</p> : null}
-
-        <div className="max-w-md rounded-2xl border border-[#1C2B33]/10 bg-white p-4">
-          <div className="mb-2 grid grid-cols-7 text-center text-xs text-[#1C2B33]/40">
-            <div>일</div>
-            <div>월</div>
-            <div>화</div>
-            <div>수</div>
-            <div>목</div>
-            <div>금</div>
-            <div>토</div>
+        {loading ? (
+          <p className="text-sm text-[#1C2B33]/50">불러오는 중...</p>
+        ) : showPast && availablePastMonths.length === 0 ? (
+          <div className="max-w-md rounded-2xl border border-[#1C2B33]/10 bg-white p-6 text-center text-sm text-[#1C2B33]/50">
+            등록된 과거 레슨일 데이터가 없습니다.
           </div>
+        ) : (
+          <div
+            className={
+              showPast ? 'max-w-md' : 'grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3'
+            }
+          >
+            {displayedMonths.map((m) => (
+              <div
+                key={m.label}
+                className="rounded-2xl border border-[#1C2B33]/10 bg-white p-4 shadow-[0_1px_2px_rgba(28,43,51,0.04)]"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                    {m.label}
+                  </h2>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => autoSelectTueThu(m.year, m.month)}
+                      className="rounded-full border border-[#1C2B33]/15 px-2.5 py-1 text-xs text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
+                    >
+                      전체선택
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => clearMonth(m.year, m.month)}
+                      title="배정 데이터가 없는 레슨일만 안전하게 해제합니다"
+                      className="rounded-full border border-[#B5482F]/30 px-2.5 py-1 text-xs text-[#B5482F] hover:bg-[#B5482F]/10"
+                    >
+                      전체 해제
+                    </button>
+                  </div>
+                </div>
 
-          <div className="grid grid-cols-7 gap-1.5">
-            {cells.map(function (day, idx) {
-              if (day === null) {
-                return <div key={idx}></div>;
-              }
+                <div className="grid grid-cols-7 gap-1 text-center font-[family-name:var(--font-mono-club)] text-xs">
+                  {['일', '월', '화', '수', '목', '금', '토'].map((dow, idx) => (
+                    <div
+                      key={dow}
+                      className={
+                        'py-1 font-semibold ' +
+                        (idx === 2 || idx === 4
+                          ? 'text-[#1C2B33]'
+                          : idx === 0
+                          ? 'text-[#B5482F]/60'
+                          : 'text-[#1C2B33]/40')
+                      }
+                    >
+                      {dow}
+                    </div>
+                  ))}
 
-              const dow = new Date(year, month - 1, day).getDay();
-              const clickable = dow === 2 || dow === 4;
-              const dateStr = year + '-' + pad(month) + '-' + pad(day);
-              const isActive = activeDates.has(dateStr);
+                  {m.days.map((day, idx) => {
+                    if (!day) {
+                      return <div key={`empty-${idx}`} className="h-9" />;
+                    }
 
-              let btnClass =
-                'aspect-square rounded-lg font-[family-name:var(--font-mono-club)] text-sm font-medium transition-colors ';
-              if (!clickable) {
-                btnClass = btnClass + 'text-[#1C2B33]/15 cursor-not-allowed';
-              } else if (isActive) {
-                btnClass = btnClass + 'bg-[#1F6F63] text-white cursor-pointer';
-              } else {
-                btnClass =
-                  btnClass + 'bg-[#FAFAF7] text-[#1C2B33]/70 hover:bg-[#C98A2B]/15 cursor-pointer';
-              }
-
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  disabled={!clickable}
-                  onClick={() => toggleDate(dateStr)}
-                  className={btnClass}
-                >
-                  {day}
-                </button>
-              );
-            })}
+                    return (
+                      <button
+                        key={day.date}
+                        type="button"
+                        onClick={() => toggleDate(day.date, day.isActive)}
+                        className={
+                          'relative h-9 rounded-lg text-sm font-medium transition-colors ' +
+                          (day.isActive
+                            ? 'bg-[#1C2B33] font-semibold text-white shadow-sm'
+                            : day.isTueThu
+                            ? 'bg-[#1C2B33]/5 text-[#1C2B33] hover:bg-[#1C2B33]/10'
+                            : 'text-[#1C2B33]/30 hover:bg-[#1C2B33]/5')
+                        }
+                      >
+                        {day.day}
+                        {day.isActive && day.hasAssignments && (
+                          <span
+                            className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#C98A2B]"
+                            title="배정 데이터 존재"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-
-        <p className="mt-4 max-w-md text-xs text-[#1C2B33]/40">
-          초록색 = 레슨일로 지정됨. 회색 화/목 = 미지정. 흐린 숫자 = 화/목 아님(선택 불가)
-        </p>
+        )}
       </main>
     </div>
   );

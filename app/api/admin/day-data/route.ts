@@ -1,74 +1,127 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const date = searchParams.get('date');
-
-  if (!date) {
-    return NextResponse.json({ error: 'date query parameter is required' }, { status: 400 });
+function buildDisplayName(
+  member: { id: number; name: string; employee_no: string | null },
+  sameNameMembers: { id: number; name: string; employee_no: string | null }[]
+): string {
+  if (sameNameMembers.length <= 1) {
+    return member.name;
   }
 
+  const empNo = member.employee_no || '';
+  if (empNo.length !== 8) {
+    return `${member.name}(${member.id})`;
+  }
+
+  const year2 = empNo.slice(2, 4); // 예: '20150230' -> '15'
+  const sameYearMembers = sameNameMembers.filter(
+    (m) => (m.employee_no || '').slice(2, 4) === year2
+  );
+
+  // 🎯 입사연도까지 같으면 끝 4자리 붙임: 예) 김태영15(0230)
+  if (sameYearMembers.length > 1) {
+    const last4 = empNo.slice(-4);
+    return `${member.name}${year2}(${last4})`;
+  }
+
+  // 입사연도가 다르면 연도 2자리만 붙임: 예) 김태영15
+  return `${member.name}${year2}`;
+}
+
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get('date');
+
+    if (!date) {
+      return NextResponse.json({ error: '날짜가 필요합니다.' }, { status: 400 });
+    }
+
     const [y, m, d] = date.split('-').map(Number);
-    const dayOfWeek = new Date(y, m - 1, d).getDay();
+    const dow = new Date(y, m - 1, d).getDay();
 
-    // 1. 해당 요일의 시간표 슬롯 조회
-    const { data: slots, error: slotsErr } = await supabaseAdmin
-      .from('time_slots')
-      .select('*')
-      .eq('day_of_week', dayOfWeek)
-      .order('start_time');
-
-    if (slotsErr) throw slotsErr;
-
-    // 2. 해당 날짜에 이미 배정된 레슨 내역 조회
-    const { data: lessons, error: lessonsErr } = await supabaseAdmin
-      .from('lessons')
-      .select('id, time_slot_id, member_id, members(id, name, department, phone)')
-      .eq('lesson_date', date);
-
-    if (lessonsErr) throw lessonsErr;
-
-    // 3. 신규 배정 대상 회원: is_active = true 인 회원만 조회
-    const { data: members, error: membersErr } = await supabaseAdmin
+    // 1. 활성 회원 목록 조회
+    const { data: members, error: mErr } = await supabaseAdmin
       .from('members')
-      .select('id, name, department, phone')
+      .select('id, name, department, phone, employee_no, is_active')
       .eq('is_active', true)
       .order('name');
 
-    if (membersErr) throw membersErr;
+    if (mErr) throw mErr;
 
-    const assignedMemberIds = new Set((lessons ?? []).map((l) => l.member_id));
+    // 2. 해당 요일 시간대 슬롯 조회
+    const { data: slots, error: sErr } = await supabaseAdmin
+      .from('time_slots')
+      .select('id, start_time, end_time, capacity')
+      .eq('day_of_week', dow)
+      .order('start_time');
 
-    const eligibleMembers = (members ?? []).map((m) => ({
-      ...m,
-      alreadyAssignedToday: assignedMemberIds.has(m.id),
-    }));
+    if (sErr) throw sErr;
 
-    const slotMap = (slots ?? []).map((slot) => {
-      const assigned = (lessons ?? [])
-        .filter((l) => l.time_slot_id === slot.id)
-        .map((l) => {
-          const m = Array.isArray(l.members) ? l.members[0] : l.members;
+    // 3. 해당 날짜 배정 데이터 조회
+    const { data: lessons, error: lErr } = await supabaseAdmin
+      .from('lessons')
+      .select('id, member_id, time_slot_id, is_completed, members(id, name, department, phone, employee_no)')
+      .eq('lesson_date', date)
+      .order('id');
+
+    if (lErr) throw lErr;
+
+    const allActiveMembers = members ?? [];
+
+    // 동명이인 그룹화 맵
+    const nameMap = new Map<string, typeof allActiveMembers>();
+    allActiveMembers.forEach((m) => {
+      const list = nameMap.get(m.name) || [];
+      list.push(m);
+      nameMap.set(m.name, list);
+    });
+
+    const assignedMemberIdSet = new Set((lessons ?? []).map((l) => l.member_id));
+
+    // 배정 가능한 회원 목록 생성 (동명이인 처리 포함)
+    const eligibleMembers = allActiveMembers.map((m) => {
+      const sameNames = nameMap.get(m.name) || [];
+      const dispName = buildDisplayName(m, sameNames);
+      return {
+        id: m.id,
+        name: dispName,
+        rawName: m.name,
+        department: m.department,
+        phone: m.phone,
+        employee_no: m.employee_no,
+        alreadyAssignedToday: assignedMemberIdSet.has(m.id),
+      };
+    });
+
+    // 시간대별 배정 목록 매핑
+    const formattedSlots = (slots ?? []).map((slot) => {
+      const slotLessons = (lessons ?? []).filter((l) => l.time_slot_id === slot.id);
+      return {
+        id: slot.id,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        capacity: slot.capacity,
+        assigned: slotLessons.map((l) => {
+          const mem = l.members as unknown as { id: number; name: string; department: string | null; phone: string | null; employee_no: string | null };
+          const sameNames = nameMap.get(mem?.name || '') || [];
+          const dispName = mem ? buildDisplayName(mem, sameNames) : '알 수 없음';
+
           return {
             lessonId: l.id,
             memberId: l.member_id,
-            name: m?.name ?? '알 수 없음',
-            department: m?.department ?? null,
-            phone: m?.phone ?? null,
+            name: dispName,
+            department: mem?.department ?? null,
+            phone: mem?.phone ?? null,
+            isCompleted: !!l.is_completed,
           };
-        });
-
-      return {
-        ...slot,
-        assigned,
+        }),
       };
     });
 
     return NextResponse.json({
-      date,
-      slots: slotMap,
+      slots: formattedSlots,
       eligibleMembers,
     });
   } catch (err: unknown) {

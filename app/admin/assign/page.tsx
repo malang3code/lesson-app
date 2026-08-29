@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import AdminDrawer from '@/components/AdminDrawer';
 
 type Member = {
   id: number;
@@ -21,74 +22,200 @@ type Slot = {
     name: string;
     department: string | null;
     phone: string | null;
+    isCompleted?: boolean;
   }[];
 };
 
-type Filter = 'all' | 'tue' | 'thu';
-
-function dowOfDate(dateStr: string) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).getDay();
-}
+type DragItem = {
+  lessonId: number;
+  sourceSlotId: number;
+  memberName: string;
+};
 
 function dowLabel(dateStr: string) {
-  return ['일', '월', '화', '수', '목', '금', '토'][dowOfDate(dateStr)];
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return ['일', '월', '화', '수', '목', '금', '토'][dow];
 }
 
 function todayStr() {
   const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  return (
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  );
+}
+
+// 🎯 화면 표시용 전화번호 하이픈 헬퍼 함수
+function displayPhone(phoneStr: string | null | undefined): string {
+  if (!phoneStr) return '-';
+  const clean = phoneStr.replace(/[^0-9]/g, '');
+  if (clean.length === 11) {
+    return clean.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+  }
+  return phoneStr;
 }
 
 export default function AdminAssignPage() {
   const [rawDates, setRawDates] = useState<string[]>([]);
-  const [filter, setFilter] = useState<Filter>('all');
   const [showPast, setShowPast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [showDetailInfo, setShowDetailInfo] = useState(false);
+
+  const [calYear, setCalYear] = useState(() => new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
   const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+
+  // 1초 플로팅 토스트
+  const [toastMessage, setToastMessage] = useState('');
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+  }, []);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage('');
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  // 드래그 앤 드롭 상태
+  const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
+  const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
 
   const [copyPanelOpen, setCopyPanelOpen] = useState(false);
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
-  const [copyResult, setCopyResult] = useState('');
   const [copying, setCopying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     fetch('/api/lesson-dates')
       .then((res) => res.json())
-      .then((data) => setRawDates(data.dates ?? []))
-      .catch(() => setError('레슨일 목록을 불러오지 못했습니다'));
-  }, []);
+      .then((data) => {
+        const dates: string[] = data.dates ?? [];
+        setRawDates(dates);
 
-  const filteredDates = useMemo(() => {
-    const today = todayStr();
-    let dates = rawDates;
+        const today = todayStr();
+        const upcoming = dates.find((d) => d >= today);
+        if (upcoming) {
+          setSelectedDate(upcoming);
+          const [y, m] = upcoming.split('-').map(Number);
+          setCalYear(y);
+          setCalMonth(m);
+        } else if (dates.length > 0) {
+          setSelectedDate(dates[0]);
+          const [y, m] = dates[0].split('-').map(Number);
+          setCalYear(y);
+          setCalMonth(m);
+        }
+      })
+      .catch(() => showToast('레슨일 목록을 불러오지 못했습니다'));
+  }, [showToast]);
 
-    if (!showPast) {
-      dates = dates.filter((d) => d >= today);
+  const activeLessonDateSet = useMemo(() => new Set(rawDates), [rawDates]);
+
+  const today = todayStr();
+  const currentYm = today.slice(0, 7);
+  const currentCalYm = `${calYear}-${String(calMonth).padStart(2, '0')}`;
+
+  const calendarDays = useMemo(() => {
+    const firstDow = new Date(calYear, calMonth - 1, 1).getDay();
+    const lastDate = new Date(calYear, calMonth, 0).getDate();
+
+    const days: ({ dateStr: string; dayNum: number; isLesson: boolean; isBeforeCurrentMonth: boolean } | null)[] = [];
+    for (let i = 0; i < firstDow; i++) {
+      days.push(null);
     }
 
-    if (filter === 'all') return dates;
-    const target = filter === 'tue' ? 2 : 4;
-    return dates.filter((d) => dowOfDate(d) === target);
-  }, [rawDates, filter, showPast]);
-
-  useEffect(() => {
-    if (filteredDates.length === 0) {
-      setSelectedDate(null);
-      return;
+    for (let d = 1; d <= lastDate; d++) {
+      const dateStr = `${calYear}-${String(calMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const ym = dateStr.slice(0, 7);
+      days.push({
+        dateStr,
+        dayNum: d,
+        isLesson: activeLessonDateSet.has(dateStr),
+        isBeforeCurrentMonth: ym < currentYm,
+      });
     }
-    if (selectedDate && filteredDates.includes(selectedDate)) return;
-    const today = todayStr();
-    const upcoming = filteredDates.find((d) => d >= today);
-    setSelectedDate(upcoming ?? filteredDates[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredDates]);
+
+    return days;
+  }, [calYear, calMonth, activeLessonDateSet, currentYm]);
+
+  const navigableLessonDates = useMemo(() => {
+    const list = showPast
+      ? [...rawDates]
+      : rawDates.filter((d) => d.slice(0, 7) >= currentYm);
+    return list.sort();
+  }, [rawDates, showPast, currentYm]);
+
+  const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
+
+  const handlePrevLesson = () => {
+    if (currentLessonIndex > 0) {
+      const target = navigableLessonDates[currentLessonIndex - 1];
+      setSelectedDate(target);
+      const [y, m] = target.split('-').map(Number);
+      setCalYear(y);
+      setCalMonth(m);
+    } else if (currentLessonIndex === -1 && selectedDate) {
+      const prev = [...navigableLessonDates].reverse().find((d) => d < selectedDate);
+      if (prev) {
+        setSelectedDate(prev);
+        const [y, m] = prev.split('-').map(Number);
+        setCalYear(y);
+        setCalMonth(m);
+      }
+    }
+  };
+
+  const handleNextLesson = () => {
+    if (currentLessonIndex >= 0 && currentLessonIndex < navigableLessonDates.length - 1) {
+      const target = navigableLessonDates[currentLessonIndex + 1];
+      setSelectedDate(target);
+      const [y, m] = target.split('-').map(Number);
+      setCalYear(y);
+      setCalMonth(m);
+    } else if (currentLessonIndex === -1 && selectedDate) {
+      const next = navigableLessonDates.find((d) => d > selectedDate);
+      if (next) {
+        setSelectedDate(next);
+        const [y, m] = next.split('-').map(Number);
+        setCalYear(y);
+        setCalMonth(m);
+      }
+    }
+  };
+
+  const handlePrevCalMonth = () => {
+    setCalMonth((prev) => {
+      if (prev === 1) {
+        setCalYear((y) => y - 1);
+        return 12;
+      }
+      return prev - 1;
+    });
+  };
+
+  const handleNextCalMonth = () => {
+    setCalMonth((prev) => {
+      if (prev === 12) {
+        setCalYear((y) => y + 1);
+        return 1;
+      }
+      return prev + 1;
+    });
+  };
 
   const loadData = useCallback(async () => {
     if (!selectedDate) {
@@ -97,12 +224,11 @@ export default function AdminAssignPage() {
       return;
     }
     setLoading(true);
-    setError('');
     try {
       const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || '조회 실패');
+        showToast(data.error || '조회 실패');
         setSlots([]);
         setEligibleMembers([]);
         return;
@@ -110,11 +236,11 @@ export default function AdminAssignPage() {
       setSlots(data.slots);
       setEligibleMembers(data.eligibleMembers);
     } catch {
-      setError('네트워크 오류');
+      showToast('네트워크 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, showToast]);
 
   useEffect(() => {
     loadData();
@@ -136,48 +262,105 @@ export default function AdminAssignPage() {
 
     const data = await res.json();
     if (!res.ok) {
-      alert(data.error || '배정 실패');
+      showToast(data.error || '배정 실패');
       return;
     }
     loadData();
   };
 
   const handleRemove = async (lessonId: number) => {
-    if (!confirm('이 배정을 삭제할까요?')) return;
     const res = await fetch('/api/admin/lessons?id=' + lessonId, { method: 'DELETE' });
     if (!res.ok) {
-      alert('삭제 실패');
+      showToast('삭제 실패');
       return;
     }
     loadData();
   };
 
+  const handleToggleCompleted = async (lessonId: number, currentCompleted: boolean) => {
+    try {
+      const res = await fetch('/api/admin/lessons', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonId,
+          isCompleted: !currentCompleted,
+        }),
+      });
+
+      if (!res.ok) {
+        showToast('상태 변경 실패');
+        return;
+      }
+      loadData();
+    } catch {
+      showToast('네트워크 오류가 발생했습니다.');
+    }
+  };
+
+  const handleDropToSlot = async (targetSlotId: number) => {
+    setDragOverSlotId(null);
+    if (!draggedItem || !selectedDate) return;
+
+    if (draggedItem.sourceSlotId === targetSlotId) {
+      setDraggedItem(null);
+      return;
+    }
+
+    const targetSlot = slots.find((s) => s.id === targetSlotId);
+    if (targetSlot && targetSlot.assigned.length >= targetSlot.capacity) {
+      showToast('해당 시간대는 이미 정원 마감되었습니다.');
+      setDraggedItem(null);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/lessons', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonId: draggedItem.lessonId,
+          targetTimeSlotId: targetSlotId,
+          lessonDate: selectedDate,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || '시간대 이동 실패');
+        return;
+      }
+
+      loadData();
+    } catch {
+      showToast('이동 중 오류가 발생했습니다.');
+    } finally {
+      setDraggedItem(null);
+    }
+  };
+
   const handleResetDay = async () => {
     if (!selectedDate) return;
+    if (!confirm(`${selectedDate}의 모든 배정을 초기화하시겠습니까?`)) return;
     setResetting(true);
     try {
       const res = await fetch('/api/admin/lessons?date=' + selectedDate, { method: 'DELETE' });
       if (!res.ok) {
-        alert('초기화 실패');
+        showToast('초기화 실패');
         return;
       }
+      showToast('초기화되었습니다.');
       loadData();
     } finally {
       setResetting(false);
     }
   };
 
-  const currentIndex = selectedDate ? filteredDates.indexOf(selectedDate) : -1;
-  const goPrev = () => {
-    if (currentIndex > 0) setSelectedDate(filteredDates[currentIndex - 1]);
-  };
-  const goNext = () => {
-    if (currentIndex >= 0 && currentIndex < filteredDates.length - 1) {
-      setSelectedDate(filteredDates[currentIndex + 1]);
-    }
-  };
-
-  const hasAnyAssignment = slots.some((s) => s.assigned.length > 0);
+  const validCopyDates = useMemo(() => {
+    return rawDates
+      .filter((d) => d.slice(0, 7) >= currentYm && d !== selectedDate)
+      .sort();
+  }, [rawDates, currentYm, selectedDate]);
 
   const toggleCopyTarget = (date: string) => {
     setCopyTargets((prev) => {
@@ -194,7 +377,6 @@ export default function AdminAssignPage() {
   const runCopy = async () => {
     if (!selectedDate || copyTargets.size === 0) return;
     setCopying(true);
-    setCopyResult('');
     try {
       const res = await fetch('/api/admin/lessons/copy', {
         method: 'POST',
@@ -206,125 +388,181 @@ export default function AdminAssignPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setCopyResult(data.error || '복사 실패');
+        showToast(data.error || '복사 실패');
         return;
       }
-      const lines = Object.entries(data.summary as Record<string, { copied: number; skipped: number }>).map(
-        ([date, s]) => date + ': ' + s.copied + '건 복사, ' + s.skipped + '건 건너뜀'
-      );
-      setCopyResult(lines.join(' / '));
+      showToast('선택한 날짜에 성공적으로 복사되었습니다.');
       setCopyTargets(new Set());
+      setCopyPanelOpen(false);
     } catch {
-      setCopyResult('네트워크 오류');
+      showToast('네트워크 오류');
     } finally {
       setCopying(false);
     }
   };
 
+  const hasAnyAssignment = slots.some((s) => s.assigned.length > 0);
+
   return (
     <div className="min-h-screen bg-[#FAFAF7] text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
-        {/* 상단 타이틀 및 월별 레슨일 관리 링크 (왼쪽 정렬) */}
-        <div>
-          <p className="font-[family-name:var(--font-mono-club)] text-xs tracking-[0.25em] text-[#1C2B33]/50 uppercase">
-            Admin Roster
-          </p>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
-            레슨 배정판
+        <div className="flex items-center gap-3">
+          <AdminDrawer />
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
+            레슨 시간표
           </h1>
-          <a
-            href="/admin/calendar"
-            className="mt-2 inline-block text-sm text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
-          >
-            월별 레슨일 관리
-          </a>
         </div>
 
-        {/* 요일 필터 & 과거 날짜 보기 버튼 바 (왼쪽 정렬) */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {(
-            [
-              ['all', '전체'],
-              ['tue', '화요일만'],
-              ['thu', '목요일만'],
-            ] as [Filter, string][]
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={
-                'rounded-full px-3 py-1.5 text-sm font-medium transition-colors ' +
-                (filter === key
-                  ? 'bg-[#1C2B33] text-white'
-                  : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/60')
-              }
-            >
-              {label}
-            </button>
-          ))}
-
-          {/* 과거 날짜 보기 버튼 */}
+        {/* 날짜 선택 네비게이션 */}
+        <div className="mt-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setShowPast((prev) => !prev)}
-            className={
-              'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ' +
-              (showPast
-                ? 'bg-[#8F3A24] text-white shadow-sm'
-                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
-            }
-          >
-            {showPast ? '✓ 과거 날짜 포함됨' : '과거 날짜 보기'}
-          </button>
-        </div>
-
-        {/* 날짜 선택 Prev / Next */}
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={goPrev}
-            disabled={currentIndex <= 0}
-            className="grid h-9 w-9 place-items-center rounded-full border border-[#1C2B33]/15 text-lg leading-none disabled:opacity-30 hover:bg-[#1C2B33]/5"
+            onClick={handlePrevLesson}
+            disabled={currentLessonIndex <= 0}
+            className="flex items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#1C2B33]/80 disabled:opacity-30 hover:bg-[#1C2B33]/5"
             aria-label="이전 레슨일"
           >
-            Prev
+            ◀ 이전
           </button>
 
-          <div className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-2 text-center">
+          <div className="rounded-full border border-[#1C2B33]/20 bg-white px-4 py-1.5 text-center shadow-sm">
             {selectedDate ? (
-              <span className="font-[family-name:var(--font-mono-club)] text-sm font-semibold">
+              <span className="font-[family-name:var(--font-mono-club)] text-sm font-bold text-[#1C2B33]">
                 {selectedDate} ({dowLabel(selectedDate)})
               </span>
             ) : (
-              <span className="text-sm text-[#1C2B33]/40">선택 가능한 레슨일 없음</span>
+              <span className="text-sm text-[#1C2B33]/40">선택된 날짜 없음</span>
             )}
           </div>
 
           <button
             type="button"
-            onClick={goNext}
-            disabled={currentIndex < 0 || currentIndex >= filteredDates.length - 1}
-            className="grid h-9 w-9 place-items-center rounded-full border border-[#1C2B33]/15 text-lg leading-none disabled:opacity-30 hover:bg-[#1C2B33]/5"
+            onClick={handleNextLesson}
+            disabled={
+              currentLessonIndex === -1 ||
+              currentLessonIndex >= navigableLessonDates.length - 1
+            }
+            className="flex items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#1C2B33]/80 disabled:opacity-30 hover:bg-[#1C2B33]/5"
             aria-label="다음 레슨일"
           >
-            Next
+            다음 ▶
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCalendarOpen((v) => !v)}
+            className={
+              'rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ' +
+              (calendarOpen
+                ? 'bg-[#1C2B33] text-white shadow-sm'
+                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
+            }
+          >
+            {calendarOpen ? '✕ 달력 접기' : '📅 달력으로 선택'}
           </button>
         </div>
 
-        {/* 복사 버튼 + 전체 초기화 버튼 */}
-        {selectedDate && hasAnyAssignment && (
-          <div className="mt-4">
-            <div className="flex flex-wrap gap-2">
+        {calendarOpen && (
+          <div className="mt-3 max-w-sm rounded-2xl border border-[#1C2B33]/10 bg-white p-4 shadow-[0_4px_12px_rgba(28,43,51,0.08)]">
+            <div className="mb-3 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => {
-                  setCopyPanelOpen((v) => !v);
-                  setCopyResult('');
-                }}
+                onClick={handlePrevCalMonth}
+                disabled={!showPast && currentCalYm <= currentYm}
+                className="grid h-7 w-7 place-items-center rounded-full border border-[#1C2B33]/15 text-xs text-[#1C2B33]/70 disabled:opacity-20 hover:bg-[#1C2B33]/5"
+                aria-label="이전 달"
+              >
+                ◀
+              </button>
+              <span className="font-[family-name:var(--font-display)] text-base font-semibold">
+                {calYear}년 {calMonth}월
+              </span>
+              <button
+                type="button"
+                onClick={handleNextCalMonth}
+                className="grid h-7 w-7 place-items-center rounded-full border border-[#1C2B33]/15 text-xs text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
+                aria-label="다음 달"
+              >
+                ▶
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center font-[family-name:var(--font-mono-club)] text-xs">
+              {['일', '월', '화', '수', '목', '금', '토'].map((dow, idx) => (
+                <div
+                  key={dow}
+                  className={
+                    'py-1 font-semibold ' +
+                    (idx === 2 || idx === 4
+                      ? 'text-[#1C2B33]'
+                      : idx === 0
+                      ? 'text-[#B5482F]/60'
+                      : 'text-[#1C2B33]/40')
+                  }
+                >
+                  {dow}
+                </div>
+              ))}
+
+              {calendarDays.map((item, idx) => {
+                if (!item) {
+                  return <div key={`empty-${idx}`} className="h-8" />;
+                }
+
+                const isSelected = selectedDate === item.dateStr;
+                const isDimmed = !showPast && item.isBeforeCurrentMonth;
+
+                return (
+                  <button
+                    key={item.dateStr}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDate(item.dateStr);
+                      setCalendarOpen(false);
+                    }}
+                    disabled={isDimmed}
+                    className={
+                      'relative h-8 rounded-lg text-xs font-medium transition-all ' +
+                      (isSelected
+                        ? 'bg-[#1C2B33] text-white shadow font-bold'
+                        : item.isLesson
+                        ? 'bg-[#1C2B33]/10 text-[#1C2B33] font-semibold hover:bg-[#1C2B33]/15'
+                        : isDimmed
+                        ? 'opacity-25 text-[#1C2B33]/40 cursor-not-allowed'
+                        : 'text-[#1C2B33]/40 hover:bg-[#1C2B33]/5')
+                    }
+                  >
+                    {item.dayNum}
+                    {item.isLesson && !isSelected && (
+                      <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-[#8F3A24]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 border-t border-[#1C2B33]/10 pt-2.5">
+              <button
+                type="button"
+                onClick={() => setShowPast((prev) => !prev)}
+                className="text-xs text-[#1C2B33]/60 underline underline-offset-2 hover:text-[#1C2B33]"
+              >
+                {showPast ? '✓ 이전 달 포함됨 (클릭 시 제외)' : '이전 달(과거) 레슨일 조회'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 액션 버튼 바 */}
+        {selectedDate && hasAnyAssignment && (
+          <div className="mt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCopyPanelOpen((v) => !v)}
                 className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
               >
-                {copyPanelOpen ? '복사 패널 닫기' : '이 배정을 다른 날짜에 복사'}
+                {copyPanelOpen ? '복사 닫기' : '날짜복사'}
               </button>
 
               <button
@@ -333,30 +571,41 @@ export default function AdminAssignPage() {
                 disabled={resetting}
                 className="rounded-full border border-[#B5482F]/30 bg-white px-4 py-1.5 text-sm font-medium text-[#B5482F] disabled:opacity-40 hover:bg-[#B5482F]/10"
               >
-                {resetting ? '초기화 중...' : '이 날짜 전체 초기화'}
+                {resetting ? '초기화 중...' : '초기화'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDetailInfo((prev) => !prev)}
+                className={
+                  'rounded-full px-4 py-1.5 text-sm font-medium transition-colors ' +
+                  (showDetailInfo
+                    ? 'bg-[#1C2B33] text-white shadow-sm'
+                    : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
+                }
+              >
+                정보
               </button>
             </div>
 
             {copyPanelOpen && (
               <div className="mt-3 max-w-md rounded-2xl border border-[#1C2B33]/10 bg-white p-4">
                 <p className="mb-2 text-sm text-[#1C2B33]/60">
-                  {selectedDate}의 배정을 복사할 날짜를 선택하세요.
+                  {selectedDate}의 배정을 복사할 레슨일을 선택하세요 (이번 달 및 이후).
                 </p>
                 <div className="max-h-48 space-y-1 overflow-y-auto">
-                  {rawDates
-                    .filter((d) => d !== selectedDate)
-                    .map((d) => (
-                      <label key={d} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={copyTargets.has(d)}
-                          onChange={() => toggleCopyTarget(d)}
-                        />
-                        {d} ({dowLabel(d)})
-                      </label>
-                    ))}
-                  {rawDates.filter((d) => d !== selectedDate).length === 0 && (
-                    <p className="text-sm text-[#1C2B33]/40">복사할 다른 레슨일이 없습니다.</p>
+                  {validCopyDates.map((d) => (
+                    <label key={d} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={copyTargets.has(d)}
+                        onChange={() => toggleCopyTarget(d)}
+                      />
+                      {d} ({dowLabel(d)})
+                    </label>
+                  ))}
+                  {validCopyDates.length === 0 && (
+                    <p className="text-sm text-[#1C2B33]/40">복사 가능한 레슨일이 없습니다.</p>
                   )}
                 </div>
 
@@ -368,16 +617,11 @@ export default function AdminAssignPage() {
                 >
                   {copying ? '복사 중...' : '선택한 날짜에 복사 (' + copyTargets.size + ')'}
                 </button>
-
-                {copyResult && <p className="mt-2 text-xs text-[#1C2B33]/60">{copyResult}</p>}
               </div>
             )}
           </div>
         )}
       </header>
-
-      {error && <p className="px-5 pt-4 text-sm text-[#B5482F] sm:px-8">{error}</p>}
-      {loading && <p className="px-5 pt-4 text-sm text-[#1C2B33]/50 sm:px-8">불러오는 중...</p>}
 
       <main className="px-5 py-6 sm:px-8">
         <div className="relative max-w-2xl">
@@ -389,6 +633,7 @@ export default function AdminAssignPage() {
               const options = eligibleMembers.filter((m) => showAll || !m.alreadyAssignedToday);
               const isFull = slot.assigned.length >= slot.capacity;
               const startH = slot.start_time.slice(0, 5);
+              const isDragOver = dragOverSlotId === slot.id;
 
               return (
                 <div key={slot.id} className="relative flex gap-4 sm:gap-6">
@@ -406,33 +651,104 @@ export default function AdminAssignPage() {
                     style={{ marginLeft: '-6px' }}
                   />
 
-                  <div className="flex-1 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
+                  {/* Drop 영역 컨테이너 */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (dragOverSlotId !== slot.id) {
+                        setDragOverSlotId(slot.id);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverSlotId === slot.id) {
+                        setDragOverSlotId(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleDropToSlot(slot.id);
+                    }}
+                    className={
+                      'flex-1 rounded-2xl border p-3 transition-all ' +
+                      (isDragOver
+                        ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/5 ring-2 ring-[#1F6F63]/20 shadow-md'
+                        : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
+                    }
+                  >
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {slot.assigned.map((a) => (
-                        <span
-                          key={a.lessonId}
-                          className="flex items-center gap-1.5 rounded-full bg-[#FAFAF7] py-1.5 pr-1.5 pl-3 text-sm"
-                        >
-                          <span className="font-medium">{a.name}</span>
-                          <span className="text-xs text-[#1C2B33]/35">
-                            {a.department ?? '-'} {a.phone ?? '-'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemove(a.lessonId)}
-                            className="grid h-5 w-5 place-items-center rounded-full text-xs text-[#B5482F] hover:bg-[#B5482F]/10"
-                            aria-label="배정 삭제"
-                          >
-                            X
-                          </button>
-                        </span>
-                      ))}
+                      {slot.assigned.map((a) => {
+                        const isThisDragging = draggedItem?.lessonId === a.lessonId;
+                        const isCompleted = !!a.isCompleted;
 
-                      {isFull ? (
-                        <span className="rounded-full bg-[#1F6F63]/10 px-3 py-1.5 text-xs font-medium text-[#1F6F63]">
-                          정원 마감
-                        </span>
-                      ) : (
+                        return (
+                          <span
+                            key={a.lessonId}
+                            draggable
+                            onDragStart={(e) => {
+                              setDraggedItem({
+                                lessonId: a.lessonId,
+                                sourceSlotId: slot.id,
+                                memberName: a.name,
+                              });
+                              e.dataTransfer.effectAllowed = 'move';
+                            }}
+                            onDragEnd={() => {
+                              setDraggedItem(null);
+                              setDragOverSlotId(null);
+                            }}
+                            className={
+                              'group flex cursor-grab items-center gap-1.5 rounded-full border py-1.5 pr-1.5 pl-3 text-sm transition-colors select-none active:cursor-grabbing ' +
+                              (isThisDragging
+                                ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
+                                : isCompleted
+                                ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
+                                : 'bg-[#FAFAF7] text-[#1C2B33] border-transparent hover:bg-[#1C2B33]/5')
+                            }
+                            title="클릭: 완료/출석 토글 / 마우스 드래그: 시간대 이동"
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleCompleted(a.lessonId, isCompleted);
+                              }}
+                              className={
+                                'cursor-pointer text-left font-medium text-sm transition-colors ' +
+                                (isCompleted ? 'line-through text-[#1F6F63]' : 'text-[#1C2B33]')
+                              }
+                            >
+                              {a.name}
+                            </button>
+
+                            {/* 🎯 정보 켜졌을 때 하이픈 자동 포맷팅 전화번호 노출 */}
+                            {showDetailInfo && (
+                              <span
+                                className={
+                                  'text-xs ' +
+                                  (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')
+                                }
+                              >
+                                {a.department ?? '-'} {displayPhone(a.phone)}
+                              </span>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemove(a.lessonId);
+                              }}
+                              className="grid h-5 w-5 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
+                              aria-label="배정 즉시 삭제"
+                              title="배정 즉시 삭제"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        );
+                      })}
+
+                      {!isFull && (
                         <>
                           <select
                             value=""
@@ -472,16 +788,29 @@ export default function AdminAssignPage() {
             })}
 
             {!loading && selectedDate && slots.length === 0 && (
-              <p className="pl-[68px] text-sm text-[#1C2B33]/40">이 날짜에는 시간대가 없습니다.</p>
-            )}
-            {!loading && !selectedDate && (
               <p className="pl-[68px] text-sm text-[#1C2B33]/40">
-                표시할 레슨일이 없습니다. 과거 날짜를 보려면 상단의 &apos;과거 날짜 보기&apos;를 눌러주세요.
+                {activeLessonDateSet.has(selectedDate)
+                  ? '이 날짜에는 시간대 슬롯이 없습니다.'
+                  : '등록된 레슨일이 아닙니다.'}
               </p>
             )}
           </div>
         </div>
       </main>
+
+      {/* 1초 플로팅 토스트 배너 */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <span>{toastMessage}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage('')}
+            className="text-xs text-white/50 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
