@@ -76,7 +76,7 @@ export default function CalendarAdminPage() {
     if (!toastMessage) return;
     const timer = setTimeout(() => {
       setToastMessage('');
-    }, 500);
+    }, 1200);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
@@ -139,7 +139,7 @@ export default function CalendarAdminPage() {
 
     const timer = setTimeout(() => {
       setShowSaveBar(true);
-    }, 1500);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [isDirty, activeDates]);
@@ -295,7 +295,6 @@ export default function CalendarAdminPage() {
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
               레슨일 관리
             </h1>
-            {/* 🎯 Next.js Link 적용: 새로고침 없이 즉시 이동 */}
             <Link
               href="/admin/assign"
               className="mt-1 inline-block text-xs text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
@@ -431,7 +430,7 @@ export default function CalendarAdminPage() {
                           <span
                             className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#C98A2B]"
                             title="배정 데이터 존재"
-                          />
+                          ></span>
                         )}
                       </button>
                     );
@@ -443,27 +442,34 @@ export default function CalendarAdminPage() {
         )}
       </main>
 
+      {/* 🎯 하단 플로팅 저장 바 (화면 비율 가변 너비 + 1줄 정렬 최적화) */}
       {showSaveBar && isDirty && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <span className="text-xs text-white/70">수정된 일정이 있습니다</span>
-          <button
-            type="button"
-            onClick={handleRevert}
-            className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
-          >
-            ↺ 되돌리기
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveChanges}
-            disabled={saving}
-            className="rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-[#1F6F63]/90 disabled:opacity-50"
-          >
-            {saving ? '저장 중...' : '저장'}
-          </button>
+        <div className="fixed bottom-6 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="truncate text-xs text-white/80 whitespace-nowrap block">
+            수정된 일정이 있습니다
+          </span>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRevert}
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 active:scale-95 transition-all"
+            >
+              ↺ 되돌리기
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              disabled={saving}
+              className="shrink-0 whitespace-nowrap rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow transition-all hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50"
+            >
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
         </div>
       )}
 
+      {/* 🎯 통일된 블랙 테마 토스트 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
