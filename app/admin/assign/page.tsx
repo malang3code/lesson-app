@@ -11,23 +11,25 @@ type Member = {
   alreadyAssignedToday?: boolean;
 };
 
+type AssignedItem = {
+  lessonId: number | string; // 로컬 임시 id 또는 DB id
+  memberId: number;
+  name: string;
+  department: string | null;
+  phone: string | null;
+  isCompleted?: boolean;
+};
+
 type Slot = {
   id: number;
   start_time: string;
   end_time: string;
   capacity: number;
-  assigned: {
-    lessonId: number;
-    memberId: number;
-    name: string;
-    department: string | null;
-    phone: string | null;
-    isCompleted?: boolean;
-  }[];
+  assigned: AssignedItem[];
 };
 
 type DragItem = {
-  lessonId: number;
+  lessonId: number | string;
   sourceSlotId: number;
   memberName: string;
 };
@@ -70,9 +72,11 @@ export default function AdminAssignPage() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
 
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [originalSlots, setOriginalSlots] = useState<Slot[]>([]); // 원본 비교용
   const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
   const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // 1초 플로팅 토스트
   const [toastMessage, setToastMessage] = useState('');
@@ -95,8 +99,25 @@ export default function AdminAssignPage() {
   const [copyPanelOpen, setCopyPanelOpen] = useState(false);
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
-  const [resetting, setResetting] = useState(false);
 
+  // 변경사항 감지 (Dirty Check)
+  const isDirty = useMemo(() => {
+    return JSON.stringify(slots) !== JSON.stringify(originalSlots);
+  }, [slots, originalSlots]);
+
+  // 브라우저 닫기/새로고침 시 경고
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  // 최초 레슨일 목록 조회 (1회)
   useEffect(() => {
     fetch('/api/lesson-dates')
       .then((res) => res.json())
@@ -159,39 +180,34 @@ export default function AdminAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
+  // 날짜 변경 전 미저장 체크 헬퍼
+  const confirmSwitchDate = (newDate: string) => {
+    if (isDirty) {
+      if (!confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
+        return;
+      }
+    }
+    setSelectedDate(newDate);
+    const [y, m] = newDate.split('-').map(Number);
+    setCalYear(y);
+    setCalMonth(m);
+  };
+
   const handlePrevLesson = () => {
     if (currentLessonIndex > 0) {
-      const target = navigableLessonDates[currentLessonIndex - 1];
-      setSelectedDate(target);
-      const [y, m] = target.split('-').map(Number);
-      setCalYear(y);
-      setCalMonth(m);
+      confirmSwitchDate(navigableLessonDates[currentLessonIndex - 1]);
     } else if (currentLessonIndex === -1 && selectedDate) {
       const prev = [...navigableLessonDates].reverse().find((d) => d < selectedDate);
-      if (prev) {
-        setSelectedDate(prev);
-        const [y, m] = prev.split('-').map(Number);
-        setCalYear(y);
-        setCalMonth(m);
-      }
+      if (prev) confirmSwitchDate(prev);
     }
   };
 
   const handleNextLesson = () => {
     if (currentLessonIndex >= 0 && currentLessonIndex < navigableLessonDates.length - 1) {
-      const target = navigableLessonDates[currentLessonIndex + 1];
-      setSelectedDate(target);
-      const [y, m] = target.split('-').map(Number);
-      setCalYear(y);
-      setCalMonth(m);
+      confirmSwitchDate(navigableLessonDates[currentLessonIndex + 1]);
     } else if (currentLessonIndex === -1 && selectedDate) {
       const next = navigableLessonDates.find((d) => d > selectedDate);
-      if (next) {
-        setSelectedDate(next);
-        const [y, m] = next.split('-').map(Number);
-        setCalYear(y);
-        setCalMonth(m);
-      }
+      if (next) confirmSwitchDate(next);
     }
   };
 
@@ -215,13 +231,15 @@ export default function AdminAssignPage() {
     });
   };
 
-  const loadData = useCallback(async (silent = false) => {
+  // 날짜 선택 시 해당 날짜의 데이터 1회 로드
+  const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
+      setOriginalSlots([]);
       setEligibleMembers([]);
       return;
     }
-    if (!silent) setLoading(true);
+    setLoading(true);
     try {
       const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
@@ -229,12 +247,13 @@ export default function AdminAssignPage() {
         showToast(data.error || '조회 실패');
         return;
       }
-      setSlots(data.slots);
-      setEligibleMembers(data.eligibleMembers);
+      setSlots(data.slots ?? []);
+      setOriginalSlots(data.slots ?? []);
+      setEligibleMembers(data.eligibleMembers ?? []);
     } catch {
       showToast('네트워크 오류가 발생했습니다.');
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
   }, [selectedDate, showToast]);
 
@@ -242,14 +261,13 @@ export default function AdminAssignPage() {
     loadData();
   }, [loadData]);
 
-  // 낙관적 업데이트: 배정
-  const handleAssign = async (slotId: number, memberIdStr: string, override: boolean) => {
+  // 로컬 즉시 배정 (0.00초 반응)
+  const handleAssign = (slotId: number, memberIdStr: string) => {
     if (!memberIdStr || !selectedDate) return;
     const memberId = Number(memberIdStr);
     const targetMember = eligibleMembers.find((m) => m.id === memberId);
     if (!targetMember) return;
 
-    const tempLessonId = Date.now();
     setSlots((prev) =>
       prev.map((s) => {
         if (s.id !== slotId) return s;
@@ -258,7 +276,7 @@ export default function AdminAssignPage() {
           assigned: [
             ...s.assigned,
             {
-              lessonId: tempLessonId,
+              lessonId: `temp-${Date.now()}-${Math.random()}`,
               memberId: targetMember.id,
               name: targetMember.name,
               department: targetMember.department,
@@ -269,90 +287,34 @@ export default function AdminAssignPage() {
         };
       })
     );
-
-    try {
-      const res = await fetch('/api/admin/lessons', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lessonDate: selectedDate,
-          timeSlotId: slotId,
-          memberId,
-          override,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.error || '배정 실패');
-        loadData(true);
-        return;
-      }
-      loadData(true);
-    } catch {
-      showToast('네트워크 오류');
-      loadData(true);
-    }
   };
 
-  // 낙관적 업데이트: 삭제
-  const handleRemove = async (lessonId: number) => {
+  // 로컬 즉시 삭제 (0.00초 반응)
+  const handleRemove = (lessonId: number | string) => {
     setSlots((prev) =>
       prev.map((s) => ({
         ...s,
         assigned: s.assigned.filter((a) => a.lessonId !== lessonId),
       }))
     );
-
-    try {
-      const res = await fetch('/api/admin/lessons?id=' + lessonId, { method: 'DELETE' });
-      if (!res.ok) {
-        showToast('삭제 실패');
-        loadData(true);
-        return;
-      }
-      loadData(true);
-    } catch {
-      showToast('네트워크 오류');
-      loadData(true);
-    }
   };
 
-  // 낙관적 업데이트: 완료 토글
-  const handleToggleCompleted = async (lessonId: number, currentCompleted: boolean) => {
+  // 로컬 즉시 완료/출석 토글 (0.00초 반응)
+  const handleToggleCompleted = (lessonId: number | string) => {
     setSlots((prev) =>
       prev.map((s) => ({
         ...s,
         assigned: s.assigned.map((a) =>
-          a.lessonId === lessonId ? { ...a, isCompleted: !currentCompleted } : a
+          a.lessonId === lessonId ? { ...a, isCompleted: !a.isCompleted } : a
         ),
       }))
     );
-
-    try {
-      const res = await fetch('/api/admin/lessons', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lessonId,
-          isCompleted: !currentCompleted,
-        }),
-      });
-
-      if (!res.ok) {
-        showToast('상태 변경 실패');
-        loadData(true);
-      }
-    } catch {
-      showToast('네트워크 오류가 발생했습니다.');
-      loadData(true);
-    }
   };
 
-  // 낙관적 업데이트: 드래그 앤 드롭 이동
-  const handleDropToSlot = async (targetSlotId: number) => {
+  // 로컬 드래그 앤 드롭 이동 (0.00초 반응)
+  const handleDropToSlot = (targetSlotId: number) => {
     setDragOverSlotId(null);
-    if (!draggedItem || !selectedDate) return;
+    if (!draggedItem) return;
 
     if (draggedItem.sourceSlotId === targetSlotId) {
       setDraggedItem(null);
@@ -385,45 +347,61 @@ export default function AdminAssignPage() {
       })
     );
     setDraggedItem(null);
+  };
 
+  // 로컬 초기화 (화면 전체 비우기)
+  const handleResetDay = () => {
+    if (!confirm('이 날짜의 모든 배정을 화면에서 비우시겠습니까?\n(하단 저장을 눌러야 최종 반영됩니다)')) return;
+    setSlots((prev) => prev.map((s) => ({ ...s, assigned: [] })));
+  };
+
+  // 🎯 1. 팝업 없이 즉시 되돌리기 실행
+  const handleRevert = () => {
+    setSlots(originalSlots);
+    showToast('원래대로 되돌렸습니다.');
+  };
+
+  // 🎯 2. 최종 DB 일괄 저장
+  const handleSaveChanges = async () => {
+    if (!selectedDate || saving) return;
+    setSaving(true);
     try {
-      const res = await fetch('/api/admin/lessons', {
-        method: 'PATCH',
+      const assignments = slots.flatMap((slot) =>
+        slot.assigned.map((a) => ({
+          timeSlotId: slot.id,
+          memberId: a.memberId,
+          isCompleted: !!a.isCompleted,
+        }))
+      );
+
+      const res = await fetch('/api/admin/lessons/batch', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lessonId: movedLessonId,
-          targetTimeSlotId: targetSlotId,
           lessonDate: selectedDate,
+          assignments,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        showToast(data.error || '시간대 이동 실패');
-        loadData(true);
+        showToast(data.error || '저장 실패');
+        return;
       }
+
+      setOriginalSlots(slots);
+      showToast('저장되었습니다.');
     } catch {
-      showToast('이동 중 오류가 발생했습니다.');
-      loadData(true);
+      showToast('저장 중 네트워크 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleResetDay = async () => {
-    if (!selectedDate) return;
-    if (!confirm(`${selectedDate}의 모든 배정을 초기화하시겠습니까?`)) return;
-    setResetting(true);
-    try {
-      const res = await fetch('/api/admin/lessons?date=' + selectedDate, { method: 'DELETE' });
-      if (!res.ok) {
-        showToast('초기화 실패');
-        return;
-      }
-      showToast('초기화되었습니다.');
-      loadData();
-    } finally {
-      setResetting(false);
-    }
-  };
+  // 이미 배정된 수강생 ID 목록 (중복 체크용)
+  const assignedMemberIds = useMemo(() => {
+    return new Set(slots.flatMap((s) => s.assigned.map((a) => a.memberId)));
+  }, [slots]);
 
   const validCopyDates = useMemo(() => {
     return rawDates
@@ -434,17 +412,18 @@ export default function AdminAssignPage() {
   const toggleCopyTarget = (date: string) => {
     setCopyTargets((prev) => {
       const next = new Set(prev);
-      if (next.has(date)) {
-        next.delete(date);
-      } else {
-        next.add(date);
-      }
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
       return next;
     });
   };
 
   const runCopy = async () => {
     if (!selectedDate || copyTargets.size === 0) return;
+    if (isDirty) {
+      alert('현재 날짜의 수정사항을 먼저 [저장]한 후 복사해주세요.');
+      return;
+    }
     setCopying(true);
     try {
       const res = await fetch('/api/admin/lessons/copy', {
@@ -463,7 +442,6 @@ export default function AdminAssignPage() {
       showToast('선택한 날짜에 성공적으로 복사되었습니다.');
       setCopyTargets(new Set());
       setCopyPanelOpen(false);
-      loadData();
     } catch {
       showToast('네트워크 오류');
     } finally {
@@ -474,7 +452,7 @@ export default function AdminAssignPage() {
   const hasAnyAssignment = slots.some((s) => s.assigned.length > 0);
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] text-[#1C2B33]">
+    <div className="min-h-screen bg-[#FAFAF7] pb-24 text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
         <div className="flex items-center gap-3">
           <AdminDrawer />
@@ -575,9 +553,7 @@ export default function AdminAssignPage() {
               ))}
 
               {calendarDays.map((item, idx) => {
-                if (!item) {
-                  return <div key={`empty-${idx}`} className="h-8" />;
-                }
+                if (!item) return <div key={`empty-${idx}`} className="h-8" />;
 
                 const isSelected = selectedDate === item.dateStr;
                 const isDimmed = !showPast && item.isBeforeCurrentMonth;
@@ -587,7 +563,7 @@ export default function AdminAssignPage() {
                     key={item.dateStr}
                     type="button"
                     onClick={() => {
-                      setSelectedDate(item.dateStr);
+                      confirmSwitchDate(item.dateStr);
                       setCalendarOpen(false);
                     }}
                     disabled={isDimmed}
@@ -629,9 +605,7 @@ export default function AdminAssignPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setCopyPanelOpen((v) => !v);
-                }}
+                onClick={() => setCopyPanelOpen((v) => !v)}
                 className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
               >
                 {copyPanelOpen ? '복사 닫기' : '날짜복사'}
@@ -640,10 +614,9 @@ export default function AdminAssignPage() {
               <button
                 type="button"
                 onClick={handleResetDay}
-                disabled={resetting}
-                className="rounded-full border border-[#B5482F]/30 bg-white px-4 py-1.5 text-sm font-medium text-[#B5482F] disabled:opacity-40 hover:bg-[#B5482F]/10"
+                className="rounded-full border border-[#B5482F]/30 bg-white px-4 py-1.5 text-sm font-medium text-[#B5482F] hover:bg-[#B5482F]/10"
               >
-                {resetting ? '초기화 중...' : '초기화'}
+                비우기
               </button>
 
               <button
@@ -702,7 +675,9 @@ export default function AdminAssignPage() {
           <div className="space-y-3">
             {slots.map((slot) => {
               const showAll = !!showAllOverride[slot.id];
-              const options = eligibleMembers.filter((m) => showAll || !m.alreadyAssignedToday);
+              const options = eligibleMembers.filter(
+                (m) => showAll || !assignedMemberIds.has(m.id)
+              );
               const isFull = slot.assigned.length >= slot.capacity;
               const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
               const startH = slot.start_time.slice(0, 5);
@@ -783,7 +758,7 @@ export default function AdminAssignPage() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleToggleCompleted(a.lessonId, isCompleted);
+                                handleToggleCompleted(a.lessonId);
                               }}
                               className={
                                 'cursor-pointer truncate font-medium text-sm transition-colors ' +
@@ -820,14 +795,14 @@ export default function AdminAssignPage() {
                         );
                       })}
 
-                      {/* 🎯 배정 후 칩 너비와 완벽하게 일치시킨 아담한 '이름' 버튼 (w-[76px]) */}
+                      {/* 아담한 '이름' 버튼 */}
                       {Array.from({ length: emptySlotsCount }).map((_, idx) => (
                         <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block">
                           <select
                             value=""
                             onChange={(e) => {
                               if (e.target.value) {
-                                handleAssign(slot.id, e.target.value, showAll);
+                                handleAssign(slot.id, e.target.value);
                               }
                             }}
                             className="h-[34px] w-[76px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
@@ -837,7 +812,7 @@ export default function AdminAssignPage() {
                             </option>
                             {options.map((m) => (
                               <option key={m.id} value={m.id}>
-                                {m.name} {m.alreadyAssignedToday ? '(중복)' : ''}
+                                {m.name} {assignedMemberIds.has(m.id) ? '(중복)' : ''}
                               </option>
                             ))}
                           </select>
@@ -882,6 +857,29 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
+      {/* 🎯 수정사항 발생 시 하단 플로팅 바 (↺ 되돌리기 & 저장) */}
+      {isDirty && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="text-xs text-white/70">수정된 내용이 있습니다</span>
+          <button
+            type="button"
+            onClick={handleRevert}
+            className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20"
+          >
+            ↺ 되돌리기
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveChanges}
+            disabled={saving}
+            className="rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow hover:bg-[#1F6F63]/90 disabled:opacity-50"
+          >
+            {saving ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      )}
+
+      {/* 1초 알림 토스트 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
