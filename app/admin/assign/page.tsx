@@ -112,7 +112,7 @@ export default function AdminAssignPage() {
     return JSON.stringify(slots) !== JSON.stringify(originalSlots);
   }, [slots, originalSlots]);
 
-  // 🎯 정원 초과 슬롯 검사 (Validation)
+  // 정원 초과 슬롯 검사 (Validation)
   const overCapacitySlots = useMemo(() => {
     return slots.filter((s) => s.assigned.length > s.capacity);
   }, [slots]);
@@ -129,7 +129,7 @@ export default function AdminAssignPage() {
 
     const timer = setTimeout(() => {
       setShowSaveBar(true);
-    }, 1500);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [isDirty, slots]);
@@ -359,7 +359,7 @@ export default function AdminAssignPage() {
     [slots]
   );
 
-  // 🖱️ PC 마우스 드롭
+  // PC 마우스 드롭
   const handleDropToSlot = (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem) return;
@@ -367,7 +367,7 @@ export default function AdminAssignPage() {
     setDraggedItem(null);
   };
 
-  // 📱 모바일 터치 드래그 이벤트 핸들러
+  // 모바일 터치 드래그 이벤트 핸들러
   const handleTouchStart = (
     e: React.TouchEvent,
     lessonId: number | string,
@@ -385,7 +385,6 @@ export default function AdminAssignPage() {
     const touch = e.touches[0];
     setTouchPos({ x: touch.clientX, y: touch.clientY });
 
-    // 손가락 위치 아래에 있는 슬롯 찾기
     const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
     const slotElement = elementBelow?.closest('[data-slot-id]');
     if (slotElement) {
@@ -398,7 +397,7 @@ export default function AdminAssignPage() {
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = () => {
     if (!isTouchDraggingRef.current || !draggedItem) return;
 
     if (dragOverSlotId !== null && dragOverSlotId !== draggedItem.sourceSlotId) {
@@ -788,8 +787,8 @@ export default function AdminAssignPage() {
       </header>
 
       {/* 본문 시간표 영역 */}
-      <main className="px-5 py-6 sm:px-8">
-        <div ref={captureRef} className="relative max-w-2xl bg-[#FAFAF7] p-2 rounded-3xl">
+      <main className="px-4 py-6 sm:px-8">
+        <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-2 sm:p-4 rounded-3xl">
           <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
           <div className="space-y-3">
@@ -805,9 +804,9 @@ export default function AdminAssignPage() {
               const isDragOver = dragOverSlotId === slot.id;
 
               return (
-                <div key={slot.id} className="relative flex gap-4 sm:gap-6">
+                <div key={slot.id} className="relative flex gap-3 sm:gap-6">
                   <div className="w-[52px] shrink-0 pt-3 text-right sm:w-[68px]">
-                    <span className="font-[family-name:var(--font-mono-club)] text-lg font-bold sm:text-xl">
+                    <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-xl whitespace-nowrap">
                       {startH}
                     </span>
                   </div>
@@ -820,7 +819,7 @@ export default function AdminAssignPage() {
                     style={{ marginLeft: '-6px' }}
                   />
 
-                  {/* 🎯 슬롯 컨테이너 (터치 타겟 식별용 data-slot-id 추가) */}
+                  {/* 슬롯 컨테이너 */}
                   <div
                     data-slot-id={slot.id}
                     onDragOver={(e) => {
@@ -839,7 +838,7 @@ export default function AdminAssignPage() {
                       handleDropToSlot(slot.id);
                     }}
                     className={
-                      'relative flex-1 rounded-2xl border p-3 transition-all ' +
+                      'relative flex-1 rounded-2xl border p-2.5 sm:p-3 transition-all ' +
                       (isDragOver
                         ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-md'
                         : isOver
@@ -849,13 +848,13 @@ export default function AdminAssignPage() {
                   >
                     {/* ⚠️ 정원 초과 뱃지 */}
                     {isOver && (
-                      <div className="absolute -top-2.5 right-3 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                      <div className="absolute -top-2.5 right-3 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-xs whitespace-nowrap">
                         <span>⚠️ 정원 초과</span>
                         <span>({slot.assigned.length}/{slot.capacity})</span>
                       </div>
                     )}
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       {slot.assigned.map((a) => {
                         const isThisDragging = draggedItem?.lessonId === a.lessonId;
                         const isCompleted = !!a.isCompleted;
@@ -876,12 +875,11 @@ export default function AdminAssignPage() {
                               setDraggedItem(null);
                               setDragOverSlotId(null);
                             }}
-                            // 📱 모바일 터치 이벤트 연결
                             onTouchStart={(e) =>
                               handleTouchStart(e, a.lessonId, slot.id, a.name)
                             }
                             className={
-                              'group inline-flex h-[34px] cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none touch-none active:cursor-grabbing ' +
+                              'group inline-flex h-[34px] max-w-full shrink-0 cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none touch-none active:cursor-grabbing ' +
                               (isThisDragging
                                 ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
                                 : isCompleted
@@ -892,6 +890,7 @@ export default function AdminAssignPage() {
                             }
                             title="터치/드래그하여 다른 시간대로 이동"
                           >
+                            {/* 🎯 캡처 시 이름 잘림(truncate) 방지 */}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -899,7 +898,7 @@ export default function AdminAssignPage() {
                                 handleToggleCompleted(a.lessonId);
                               }}
                               className={
-                                'cursor-pointer truncate font-medium text-sm transition-colors ' +
+                                'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors ' +
                                 (isCompleted ? 'line-through text-[#1F6F63]' : isOver ? 'text-[#B5482F]' : 'text-[#1C2B33]')
                               }
                             >
@@ -909,7 +908,7 @@ export default function AdminAssignPage() {
                             {showDetailInfo && (
                               <span
                                 className={
-                                  'text-xs ' +
+                                  'whitespace-nowrap text-xs ' +
                                   (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')
                                 }
                               >
@@ -923,7 +922,7 @@ export default function AdminAssignPage() {
                                 e.stopPropagation();
                                 handleRemove(a.lessonId);
                               }}
-                              className="grid h-4 w-4 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
+                              className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
                               aria-label="배정 즉시 삭제"
                               title="배정 즉시 삭제"
                             >
@@ -934,7 +933,7 @@ export default function AdminAssignPage() {
                       })}
 
                       {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                        <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block">
+                        <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block shrink-0">
                           <select
                             value=""
                             onChange={(e) => {
@@ -942,7 +941,7 @@ export default function AdminAssignPage() {
                                 handleAssign(slot.id, e.target.value);
                               }
                             }}
-                            className="h-[34px] w-[76px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
+                            className="h-[34px] w-[74px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
                           >
                             <option value="" disabled hidden>
                               이름
@@ -966,7 +965,7 @@ export default function AdminAssignPage() {
                             setShowAllOverride((prev) => ({ ...prev, [slot.id]: !showAll }))
                           }
                           className={
-                            'h-[34px] rounded-full px-2.5 text-xs font-medium transition-colors ' +
+                            'h-[34px] shrink-0 rounded-full px-2.5 text-xs font-medium transition-colors ' +
                             (showAll
                               ? 'bg-[#C98A2B] text-white'
                               : 'bg-[#1C2B33]/5 text-[#1C2B33]/45 hover:bg-[#1C2B33]/10')
@@ -993,7 +992,7 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
-      {/* 📱 모바일 터치 드래그 중 손가락을 따라다니는 플로팅 배지 */}
+      {/* 모바일 터치 드래그 중 손가락을 따라다니는 플로팅 배지 */}
       {touchPos && draggedItem && (
         <div
           style={{
@@ -1001,44 +1000,50 @@ export default function AdminAssignPage() {
             top: touchPos.y,
             transform: 'translate(-50%, -120%)',
           }}
-          className="pointer-events-none fixed z-50 flex items-center gap-1.5 rounded-full bg-[#1C2B33] px-3.5 py-1.5 text-sm font-semibold text-white shadow-2xl ring-2 ring-white/50 animate-pulse"
+          className="pointer-events-none fixed z-50 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[#1C2B33] px-3.5 py-1.5 text-sm font-semibold text-white shadow-2xl ring-2 ring-white/50 animate-pulse"
         >
           <span>✋</span>
           <span>{draggedItem.memberName}</span>
         </div>
       )}
 
-      {/* 🎯 하단 플로팅 저장 바 (초과 시 비활성화 & 안내) */}
+      {/* 🎯 하단 플로팅 저장 바 (화면 비율 가변 너비 + 1줄 고정 정렬) */}
       {showSaveBar && isDirty && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          {hasOverCapacity ? (
-            <span className="text-xs font-semibold text-[#E57373]">
-              ⚠️ 정원 초과된 슬롯({overCapacitySlots.length}개)이 있습니다
-            </span>
-          ) : (
-            <span className="text-xs text-white/70">수정된 내용이 있습니다</span>
-          )}
+        <div className="fixed bottom-6 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="min-w-0 flex-1 truncate">
+            {hasOverCapacity ? (
+              <span className="truncate text-xs font-semibold text-[#E57373] whitespace-nowrap block">
+                ⚠️ 정원 초과 ({overCapacitySlots.length}개 슬롯)
+              </span>
+            ) : (
+              <span className="truncate text-xs text-white/80 whitespace-nowrap block">
+                수정된 내용이 있습니다
+              </span>
+            )}
+          </div>
 
-          <button
-            type="button"
-            onClick={handleRevert}
-            className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20"
-          >
-            ↺ 되돌리기
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveChanges}
-            disabled={saving || hasOverCapacity}
-            className={
-              'rounded-full px-4 py-1.5 text-xs font-bold text-white shadow transition-all ' +
-              (hasOverCapacity
-                ? 'bg-white/20 text-white/40 cursor-not-allowed'
-                : 'bg-[#1F6F63] hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50')
-            }
-          >
-            {saving ? '저장 중...' : '저장'}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRevert}
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 active:scale-95 transition-all"
+            >
+              ↺ 되돌리기
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              disabled={saving || hasOverCapacity}
+              className={
+                'shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-bold text-white shadow transition-all ' +
+                (hasOverCapacity
+                  ? 'bg-white/20 text-white/40 cursor-not-allowed'
+                  : 'bg-[#1F6F63] hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50')
+              }
+            >
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
         </div>
       )}
 
