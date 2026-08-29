@@ -4,16 +4,17 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+// 정보 관리 메뉴 제거 (시간표, 레슨 일정만 제공)
 const MENU_ITEMS = [
-  { href: '/admin/assign', label: '레슨 시간표' },
-  { href: '/admin/calendar', label: '레슨일 관리' },
-  { href: '/admin/settings', label: '정보 관리' },
+  { href: '/viewer/assign', label: '레슨 시간표' },
+  { href: '/viewer/calendar', label: '레슨 일정' },
 ];
 
-export default function AdminDrawer() {
+export default function ViewerDrawer() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
+  // ESC 키로 닫기
   useEffect(() => {
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') setIsOpen(false);
@@ -35,6 +36,7 @@ export default function AdminDrawer() {
 
   return (
     <>
+      {/* 햄버거 메뉴 버튼 */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
@@ -47,6 +49,7 @@ export default function AdminDrawer() {
         <span className="h-0.5 w-4 rounded-full bg-[#1C2B33]" />
       </button>
 
+      {/* 배경 딤 (Backdrop) */}
       {isOpen && (
         <div
           onClick={() => setIsOpen(false)}
@@ -54,6 +57,7 @@ export default function AdminDrawer() {
         />
       )}
 
+      {/* 슬라이드 아웃 드로어 */}
       <aside
         className={
           'fixed top-0 left-0 bottom-0 z-50 flex w-72 flex-col justify-between bg-[#FAFAF7] p-6 shadow-2xl transition-transform duration-300 ease-in-out ' +
@@ -63,7 +67,7 @@ export default function AdminDrawer() {
         <div>
           <div className="flex items-center justify-between border-b border-[#1C2B33]/10 pb-4">
             <h2 className="font-[family-name:var(--font-display)] text-xl font-bold text-[#1C2B33]">
-              관리자 메뉴
+              레슨 조회 (뷰어)
             </h2>
             <button
               type="button"
@@ -106,7 +110,7 @@ export default function AdminDrawer() {
             로그아웃
           </button>
           <div className="text-center font-[family-name:var(--font-mono-club)] text-[11px] text-[#1C2B33]/40">
-            Admin Mode
+            Viewer Mode
           </div>
         </div>
       </aside>

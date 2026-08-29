@@ -1,29 +1,34 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifySessionToken } from '@/lib/session';
 
-export async function middleware(req: NextRequest) {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 로그인 페이지, 로그인 API는 항상 통과
-  if (pathname.startsWith('/login') || pathname.startsWith('/api/login')) {
+  // 정적 파일, API, 루트 페이지는 그대로 통과
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/'
+  ) {
     return NextResponse.next();
   }
 
-  const token = req.cookies.get('session')?.value;
-  const session = token ? await verifySessionToken(token) : null;
+  const role = req.cookies.get('role')?.value;
+  const adminSession = req.cookies.get('admin_session')?.value;
 
-  // 관리자 전용 경로 — role이 admin이 아니면 통합 로그인 화면으로
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
-    if (!session || session.role !== 'admin') {
-      return NextResponse.redirect(new URL('/login', req.url));
+  // 관리자 페이지 접근 시 검사 -> 없으면 루트(/)로 이동
+  if (pathname.startsWith('/admin')) {
+    if (role !== 'admin' && adminSession !== 'true') {
+      return NextResponse.redirect(new URL('/', req.url));
     }
-    return NextResponse.next();
   }
 
-  // 일반 열람 경로 — 세션(viewer 또는 admin)만 있으면 통과
-  if (!session) {
-    return NextResponse.redirect(new URL('/login', req.url));
+  // 뷰어 페이지 접근 시 검사 -> 없으면 루트(/)로 이동
+  if (pathname.startsWith('/viewer')) {
+    if (!role || (role !== 'viewer' && role !== 'admin')) {
+      return NextResponse.redirect(new URL('/', req.url));
+    }
   }
 
   return NextResponse.next();

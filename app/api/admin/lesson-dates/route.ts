@@ -1,146 +1,119 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// 활성화된 레슨일 및 해당 일자의 배정 건수 조회
+// GET: 등록된 전체 레슨일 및 일자별 배정 건수 조회
 export async function GET() {
   try {
-    const { data: lessonDates, error: datesErr } = await supabaseAdmin
+    // 1. lesson_dates 테이블에서 등록된 날짜 조회
+    const { data: dateRows, error: dateErr } = await supabaseAdmin
       .from('lesson_dates')
       .select('lesson_date')
-      .order('lesson_date');
+      .order('lesson_date', { ascending: true });
 
-    if (datesErr) throw datesErr;
+    if (dateErr) {
+      console.error('❌ [lesson_dates 조회 실패]:', dateErr);
+      return NextResponse.json({ error: dateErr.message }, { status: 500 });
+    }
 
-    // 배정된 건수 체크
-    const { data: lessons, error: lessonsErr } = await supabaseAdmin
+    const dates = (dateRows ?? []).map((row: { lesson_date: string }) => row.lesson_date);
+
+    // 2. lessons 테이블에서 배정 건수 조회
+    const assignmentCounts: Record<string, number> = {};
+    const { data: lessonRows, error: lessonErr } = await supabaseAdmin
       .from('lessons')
       .select('lesson_date');
 
-    const assignmentCounts: Record<string, number> = {};
-    if (!lessonsErr && lessons) {
-      lessons.forEach((l: { lesson_date: string }) => {
-        if (l.lesson_date) {
-          assignmentCounts[l.lesson_date] = (assignmentCounts[l.lesson_date] || 0) + 1;
+    if (!lessonErr && lessonRows) {
+      lessonRows.forEach((r: { lesson_date: string }) => {
+        if (r.lesson_date) {
+          assignmentCounts[r.lesson_date] = (assignmentCounts[r.lesson_date] || 0) + 1;
         }
       });
     }
 
-    return NextResponse.json({
-      dates: (lessonDates ?? []).map((row) => row.lesson_date),
-      assignmentCounts,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err);
-    console.error('GET lesson-dates error:', err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ dates, assignmentCounts });
+  } catch (err: any) {
+    console.error('❌ [서버 내부 오류]:', err);
+    return NextResponse.json({ error: err?.message || '서버 오류' }, { status: 500 });
   }
 }
 
-// 개별 날짜 토글 (forceDelete 옵션 지원)
+// POST: 일괄 저장 (새로 선택된 날짜 추가 + 빠진 날짜 삭제)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { date, isActive, forceDelete } = body;
 
-    if (!date) {
-      return NextResponse.json({ error: 'date is required' }, { status: 400 });
-    }
+    // 1. 일괄 저장 모드 ({ dates: string[] })
+    if (Array.isArray(body.dates)) {
+      const targetDates = new Set<string>(body.dates);
 
-    if (isActive) {
-      // 1. 레슨일 추가
-      const { error } = await supabaseAdmin
+      // 현재 DB에 저장되어 있는 레슨일 목록 가져오기
+      const { data: currentRows, error: getErr } = await supabaseAdmin
         .from('lesson_dates')
-        .upsert({ lesson_date: date }, { onConflict: 'lesson_date' });
-      if (error) throw error;
-    } else {
-      // 2. 개별 해제 시 배정 내역 확인
-      if (!forceDelete) {
-        const { count, error: countErr } = await supabaseAdmin
+        .select('lesson_date');
+
+      if (getErr) throw getErr;
+
+      const currentDates = new Set<string>((currentRows ?? []).map((r: any) => r.lesson_date));
+
+      // 추가해야 할 날짜들 (새로 켜진 날짜)
+      const toInsert = body.dates
+        .filter((d: string) => !currentDates.has(d))
+        .map((d: string) => ({ lesson_date: d }));
+
+      // 삭제해야 할 날짜들 (꺼진 날짜)
+      const toDelete = Array.from(currentDates).filter((d: string) => !targetDates.has(d));
+
+      // 삭제할 날짜에 연관된 lessons 배정 데이터 먼저 삭제
+      if (toDelete.length > 0) {
+        await supabaseAdmin
           .from('lessons')
-          .select('*', { count: 'exact', head: true })
-          .eq('lesson_date', date);
+          .delete()
+          .in('lesson_date', toDelete);
 
-        if (!countErr && count && count > 0) {
-          return NextResponse.json(
-            {
-              requireConfirm: true,
-              assignmentCount: count,
-              message: `해당 날짜에 ${count}건의 배정 내역이 존재합니다.`,
-            },
-            { status: 409 }
-          );
-        }
-      }
-
-      // 배정 데이터 삭제 (강제 해제 승인 시)
-      await supabaseAdmin.from('lessons').delete().eq('lesson_date', date);
-
-      // 레슨일 삭제
-      const { error: delDateErr } = await supabaseAdmin
-        .from('lesson_dates')
-        .delete()
-        .eq('lesson_date', date);
-
-      if (delDateErr) throw delDateErr;
-    }
-
-    return NextResponse.json({ success: true, date, isActive });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err);
-    console.error('POST lesson-dates error:', err);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
-
-// 일괄 등록 및 일괄 해제 (해제 시 배정 없는 날만 안전 삭제)
-export async function PUT(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { dates, isActive } = body;
-
-    if (!Array.isArray(dates) || dates.length === 0) {
-      return NextResponse.json({ error: 'dates array is required' }, { status: 400 });
-    }
-
-    if (isActive) {
-      // 일괄 활성화
-      const rows = dates.map((d: string) => ({ lesson_date: d }));
-      const { error } = await supabaseAdmin
-        .from('lesson_dates')
-        .upsert(rows, { onConflict: 'lesson_date' });
-      if (error) throw error;
-
-      return NextResponse.json({ success: true, count: dates.length, isActive });
-    } else {
-      // 🔒 전체 해제: 배정 데이터가 있는 날짜는 제외하고 빈 날짜만 찾아서 삭제
-      const { data: assignedLessons, error: assignErr } = await supabaseAdmin
-        .from('lessons')
-        .select('lesson_date')
-        .in('lesson_date', dates);
-
-      if (assignErr) throw assignErr;
-
-      const assignedDateSet = new Set((assignedLessons ?? []).map((l: { lesson_date: string }) => l.lesson_date));
-      const targetDatesToDelete = dates.filter((d: string) => !assignedDateSet.has(d));
-
-      if (targetDatesToDelete.length > 0) {
+        // lesson_dates 테이블에서 삭제
         const { error: delErr } = await supabaseAdmin
           .from('lesson_dates')
           .delete()
-          .in('lesson_date', targetDatesToDelete);
+          .in('lesson_date', toDelete);
 
         if (delErr) throw delErr;
       }
 
-      return NextResponse.json({
-        success: true,
-        deletedDates: targetDatesToDelete,
-        preservedCount: assignedDateSet.size,
-      });
+      // 새로 추가된 레슨일 insert
+      if (toInsert.length > 0) {
+        const { error: insErr } = await supabaseAdmin
+          .from('lesson_dates')
+          .insert(toInsert);
+
+        if (insErr) throw insErr;
+      }
+
+      return NextResponse.json({ success: true, inserted: toInsert.length, deleted: toDelete.length });
     }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err);
-    console.error('PUT lesson-dates error:', err);
-    return NextResponse.json({ error: message }, { status: 500 });
+
+    // 2. 단일 저장 fallback
+    const targetDate = body.lesson_date || body.date;
+    const isActive = body.isActive !== undefined ? body.isActive : body.is_active;
+
+    if (!targetDate) {
+      return NextResponse.json({ error: '날짜 정보가 없습니다.' }, { status: 400 });
+    }
+
+    if (isActive) {
+      await supabaseAdmin.from('lesson_dates').upsert({ lesson_date: targetDate });
+    } else {
+      await supabaseAdmin.from('lessons').delete().eq('lesson_date', targetDate);
+      await supabaseAdmin.from('lesson_dates').delete().eq('lesson_date', targetDate);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error('❌ [POST 저장 오류]:', err);
+    return NextResponse.json({ error: err?.message || '저장 실패' }, { status: 500 });
   }
+}
+
+export async function PUT(req: NextRequest) {
+  return POST(req);
 }

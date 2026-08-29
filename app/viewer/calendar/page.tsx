@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import Link from 'next/link';
-import AdminDrawer from '@/components/AdminDrawer';
+import ViewerDrawer from '../../../components/ViewerDrawer';
 
 type DayInfo = {
   date: string;
@@ -10,7 +9,6 @@ type DayInfo = {
   dow: number;
   isTueThu: boolean;
   isActive: boolean;
-  hasAssignments: boolean;
 };
 
 type MonthData = {
@@ -23,8 +21,7 @@ type MonthData = {
 function buildMonth(
   year: number,
   month: number,
-  activeSet: Set<string>,
-  assignmentCounts: Record<string, number>
+  activeSet: Set<string>
 ): MonthData {
   const firstDow = new Date(year, month - 1, 1).getDay();
   const lastDate = new Date(year, month, 0).getDate();
@@ -45,7 +42,6 @@ function buildMonth(
       dow,
       isTueThu,
       isActive: activeSet.has(dateStr),
-      hasAssignments: (assignmentCounts[dateStr] || 0) > 0,
     });
   }
 
@@ -57,13 +53,9 @@ function buildMonth(
   };
 }
 
-export default function CalendarAdminPage() {
-  const [originalActiveDates, setOriginalActiveDates] = useState<Set<string>>(new Set());
+export default function ViewerCalendarPage() {
   const [activeDates, setActiveDates] = useState<Set<string>>(new Set());
-  const [assignmentCounts, setAssignmentCounts] = useState<Record<string, number>>({});
-
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [showPast, setShowPast] = useState(false);
   const [pastMonthIndex, setPastMonthIndex] = useState(0);
@@ -76,7 +68,7 @@ export default function CalendarAdminPage() {
     if (!toastMessage) return;
     const timer = setTimeout(() => {
       setToastMessage('');
-    }, 500);
+    }, 1000);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
@@ -85,6 +77,7 @@ export default function CalendarAdminPage() {
   const currentMonth = today.getMonth() + 1;
   const currentYmStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
+  // 향후 3개월 목록 생성
   const futureMonthsList = useMemo(() => {
     const list: { year: number; month: number }[] = [];
     for (let i = 0; i < 3; i++) {
@@ -105,12 +98,9 @@ export default function CalendarAdminPage() {
       const res = await fetch('/api/admin/lesson-dates');
       const data = await res.json();
       if (res.ok) {
-        const loadedSet = new Set<string>(data.dates ?? []);
-        setOriginalActiveDates(new Set(loadedSet));
-        setActiveDates(new Set(loadedSet));
-        setAssignmentCounts(data.assignmentCounts ?? {});
+        setActiveDates(new Set<string>(data.dates ?? []));
       } else {
-        showToast('조회 실패: ' + (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error));
+        showToast('일정 조회 실패');
       }
     } catch {
       showToast('데이터 불러오기 실패');
@@ -123,38 +113,7 @@ export default function CalendarAdminPage() {
     loadDates();
   }, [loadDates]);
 
-  const isDirty = useMemo(() => {
-    const origArr = Array.from(originalActiveDates).sort().join(',');
-    const currArr = Array.from(activeDates).sort().join(',');
-    return origArr !== currArr;
-  }, [originalActiveDates, activeDates]);
-
-  const [showSaveBar, setShowSaveBar] = useState(false);
-
-  useEffect(() => {
-    if (!isDirty) {
-      setShowSaveBar(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setShowSaveBar(true);
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [isDirty, activeDates]);
-
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isDirty]);
-
+  // 과거 레슨일이 존재하는 월 목록 추출
   const availablePastMonths = useMemo(() => {
     const ymSet = new Set<string>();
     activeDates.forEach((d) => {
@@ -178,133 +137,33 @@ export default function CalendarAdminPage() {
   const displayedMonths = useMemo(() => {
     if (!showPast) {
       return futureMonthsList.map(({ year, month }) =>
-        buildMonth(year, month, activeDates, assignmentCounts)
+        buildMonth(year, month, activeDates)
       );
     }
     if (availablePastMonths.length === 0) return [];
     const target = availablePastMonths[pastMonthIndex] ?? availablePastMonths[0];
-    return [buildMonth(target.year, target.month, activeDates, assignmentCounts)];
-  }, [showPast, futureMonthsList, availablePastMonths, pastMonthIndex, activeDates, assignmentCounts]);
-
-  const toggleDate = (dateStr: string, currentlyActive: boolean) => {
-    if (currentlyActive && (assignmentCounts[dateStr] || 0) > 0) {
-      const count = assignmentCounts[dateStr];
-      const confirmed = window.confirm(
-        `⚠️ [주의] ${dateStr}에 ${count}건의 수강생 배정 내역이 있습니다.\n\n` +
-        `레슨일을 해제하고 저장하면 해당 배정 데이터가 영구 삭제됩니다.\n계속 진행하시겠습니까?`
-      );
-      if (!confirmed) return;
-    }
-
-    setActiveDates((prev) => {
-      const next = new Set(prev);
-      if (next.has(dateStr)) {
-        next.delete(dateStr);
-      } else {
-        next.add(dateStr);
-      }
-      return next;
-    });
-  };
-
-  const autoSelectTueThu = (year: number, month: number) => {
-    const lastDate = new Date(year, month, 0).getDate();
-    setActiveDates((prev) => {
-      const next = new Set(prev);
-      for (let d = 1; d <= lastDate; d++) {
-        const dow = new Date(year, month - 1, d).getDay();
-        if (dow === 2 || dow === 4) {
-          next.add(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
-        }
-      }
-      return next;
-    });
-  };
-
-  const clearMonth = (year: number, month: number) => {
-    const lastDate = new Date(year, month, 0).getDate();
-    let preservedCount = 0;
-    let deletedCount = 0;
-
-    setActiveDates((prev) => {
-      const next = new Set(prev);
-      for (let d = 1; d <= lastDate; d++) {
-        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        if (next.has(dateStr)) {
-          if ((assignmentCounts[dateStr] || 0) > 0) {
-            preservedCount++;
-          } else {
-            next.delete(dateStr);
-            deletedCount++;
-          }
-        }
-      }
-      return next;
-    });
-
-    if (deletedCount === 0 && preservedCount > 0) {
-      showToast(`배정 내역이 있는 ${preservedCount}개 일자는 보존되었습니다.`);
-    } else if (preservedCount > 0) {
-      showToast(`${deletedCount}개 일자가 해제되었습니다. (${preservedCount}개 배정일자 보존)`);
-    } else {
-      showToast(`${year}년 ${month}월 레슨일이 해제되었습니다.`);
-    }
-  };
-
-  const handleRevert = () => {
-    setActiveDates(new Set(originalActiveDates));
-    setShowSaveBar(false);
-    showToast('원래대로 되돌렸습니다.');
-  };
-
-  const handleSaveChanges = async () => {
-    if (saving) return;
-    setSaving(true);
-
-    try {
-      const datesArray = Array.from(activeDates).sort();
-      const res = await fetch('/api/admin/lesson-dates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dates: datesArray }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.error || '저장 실패');
-        return;
-      }
-
-      setOriginalActiveDates(new Set(activeDates));
-      setShowSaveBar(false);
-      showToast('레슨 일정이 성공적으로 저장되었습니다.');
-      loadDates();
-    } catch {
-      showToast('저장 중 네트워크 오류가 발생했습니다.');
-    } finally {
-      setSaving(false);
-    }
-  };
+    return [buildMonth(target.year, target.month, activeDates)];
+  }, [showPast, futureMonthsList, availablePastMonths, pastMonthIndex, activeDates]);
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] pb-28 text-[#1C2B33]">
+    <div className="min-h-screen bg-[#FAFAF7] pb-24 text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
         <div className="flex items-center gap-3">
-          <AdminDrawer />
+          <ViewerDrawer />
           <div>
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
-              레슨일 관리
+              레슨 일정
             </h1>
-            {/* 🎯 Next.js Link 적용: 새로고침 없이 즉시 이동 */}
-            <Link
-              href="/admin/assign"
+            <a
+              href="/viewer/assign"
               className="mt-1 inline-block text-xs text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
             >
-              ← 돌아가기
-            </Link>
+              ← 레슨 시간표 보기
+            </a>
           </div>
         </div>
 
+        {/* 과거 날짜 토글 및 네비게이션 */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -349,6 +208,7 @@ export default function CalendarAdminPage() {
         </div>
       </header>
 
+      {/* 3개월 달력 메인 그리드 (클릭 없는 순수 조회용) */}
       <main className="px-5 py-6 sm:px-8">
         {loading ? (
           <p className="text-sm text-[#1C2B33]/50">불러오는 중...</p>
@@ -371,23 +231,6 @@ export default function CalendarAdminPage() {
                   <h2 className="font-[family-name:var(--font-display)] text-base font-bold text-[#1C2B33]">
                     {m.label}
                   </h2>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => autoSelectTueThu(m.year, m.month)}
-                      className="flex h-7 items-center rounded-full border border-[#1C2B33]/15 bg-white px-2.5 text-xs font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 transition-colors"
-                    >
-                      전체선택
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => clearMonth(m.year, m.month)}
-                      title="배정 데이터가 없는 레슨일만 안전하게 해제합니다"
-                      className="flex h-7 items-center rounded-full border border-[#B5482F]/30 bg-white px-2.5 text-xs font-medium text-[#B5482F] hover:bg-[#B5482F]/10 transition-colors"
-                    >
-                      전체 해제
-                    </button>
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-7 gap-1 text-center font-[family-name:var(--font-mono-club)] text-xs">
@@ -413,27 +256,19 @@ export default function CalendarAdminPage() {
                     }
 
                     return (
-                      <button
+                      <div
                         key={day.date}
-                        type="button"
-                        onClick={() => toggleDate(day.date, day.isActive)}
                         className={
-                          'relative flex h-9 flex-col items-center justify-center rounded-xl text-xs font-medium transition-all ' +
+                          'relative flex h-9 flex-col items-center justify-center rounded-xl text-xs font-medium select-none ' +
                           (day.isActive
-                            ? 'bg-[#1C2B33] font-bold text-white shadow-xs hover:bg-[#253943]'
+                            ? 'bg-[#1C2B33] font-bold text-white shadow-xs'
                             : day.isTueThu
-                            ? 'bg-[#1C2B33]/5 text-[#1C2B33] hover:bg-[#1C2B33]/10'
-                            : 'text-[#1C2B33]/30 hover:bg-[#1C2B33]/5')
+                            ? 'bg-[#1C2B33]/5 text-[#1C2B33]'
+                            : 'text-[#1C2B33]/30')
                         }
                       >
                         <span>{day.day}</span>
-                        {day.isActive && day.hasAssignments && (
-                          <span
-                            className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#C98A2B]"
-                            title="배정 데이터 존재"
-                          />
-                        )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -442,27 +277,6 @@ export default function CalendarAdminPage() {
           </div>
         )}
       </main>
-
-      {showSaveBar && isDirty && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <span className="text-xs text-white/70">수정된 일정이 있습니다</span>
-          <button
-            type="button"
-            onClick={handleRevert}
-            className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
-          >
-            ↺ 되돌리기
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveChanges}
-            disabled={saving}
-            className="rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-[#1F6F63]/90 disabled:opacity-50"
-          >
-            {saving ? '저장 중...' : '저장'}
-          </button>
-        </div>
-      )}
 
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">

@@ -12,7 +12,7 @@ type Member = {
 };
 
 type AssignedItem = {
-  lessonId: number | string; // 로컬 임시 id 또는 DB id
+  lessonId: number | string;
   memberId: number;
   name: string;
   department: string | null;
@@ -72,13 +72,12 @@ export default function AdminAssignPage() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
 
   const [slots, setSlots] = useState<Slot[]>([]);
-  const [originalSlots, setOriginalSlots] = useState<Slot[]>([]); // 원본 비교용
+  const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
   const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
   const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // 1초 플로팅 토스트
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = useCallback((msg: string) => {
@@ -100,12 +99,10 @@ export default function AdminAssignPage() {
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
 
-  // 변경사항 실시간 감지 (Dirty Check)
   const isDirty = useMemo(() => {
     return JSON.stringify(slots) !== JSON.stringify(originalSlots);
   }, [slots, originalSlots]);
 
-  // 🎯 1.5초 디바운스(Debounce)로 하단 저장 바 노출 제어
   const [showSaveBar, setShowSaveBar] = useState(false);
 
   useEffect(() => {
@@ -114,7 +111,6 @@ export default function AdminAssignPage() {
       return;
     }
 
-    // 변경사항이 생기면 1.5초 타이머 시작 (이벤트가 계속 오면 이전 타이머 자동 취소)
     const timer = setTimeout(() => {
       setShowSaveBar(true);
     }, 1500);
@@ -122,7 +118,6 @@ export default function AdminAssignPage() {
     return () => clearTimeout(timer);
   }, [isDirty, slots]);
 
-  // 브라우저 닫기/새로고침 시 경고
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {
@@ -134,7 +129,6 @@ export default function AdminAssignPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
 
-  // 최초 레슨일 목록 조회 (1회)
   useEffect(() => {
     fetch('/api/lesson-dates')
       .then((res) => res.json())
@@ -197,7 +191,6 @@ export default function AdminAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
-  // 날짜 변경 전 미저장 체크 헬퍼
   const confirmSwitchDate = (newDate: string) => {
     if (isDirty) {
       if (!confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
@@ -248,7 +241,6 @@ export default function AdminAssignPage() {
     });
   };
 
-  // 날짜 선택 시 해당 날짜의 데이터 1회 로드
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
@@ -278,7 +270,6 @@ export default function AdminAssignPage() {
     loadData();
   }, [loadData]);
 
-  // 로컬 즉시 배정 (0.00초 반응)
   const handleAssign = (slotId: number, memberIdStr: string) => {
     if (!memberIdStr || !selectedDate) return;
     const memberId = Number(memberIdStr);
@@ -306,7 +297,6 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 로컬 즉시 삭제 (0.00초 반응)
   const handleRemove = (lessonId: number | string) => {
     setSlots((prev) =>
       prev.map((s) => ({
@@ -316,7 +306,6 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 로컬 즉시 완료/출석 토글 (0.00초 반응)
   const handleToggleCompleted = (lessonId: number | string) => {
     setSlots((prev) =>
       prev.map((s) => ({
@@ -328,7 +317,6 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 로컬 드래그 앤 드롭 이동 (0.00초 반응)
   const handleDropToSlot = (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem) return;
@@ -366,20 +354,17 @@ export default function AdminAssignPage() {
     setDraggedItem(null);
   };
 
-  // 로컬 초기화 (화면 전체 비우기)
   const handleResetDay = () => {
     if (!confirm('이 날짜의 모든 배정을 화면에서 비우시겠습니까?\n(하단 저장을 눌러야 최종 반영됩니다)')) return;
     setSlots((prev) => prev.map((s) => ({ ...s, assigned: [] })));
   };
 
-  // 팝업 없이 즉시 되돌리기 실행
   const handleRevert = () => {
     setSlots(originalSlots);
     setShowSaveBar(false);
     showToast('원래대로 되돌렸습니다.');
   };
 
-  // 최종 DB 일괄 저장
   const handleSaveChanges = async () => {
     if (!selectedDate || saving) return;
     setSaving(true);
@@ -417,7 +402,6 @@ export default function AdminAssignPage() {
     }
   };
 
-  // 이미 배정된 수강생 ID 목록 (중복 체크용)
   const assignedMemberIds = useMemo(() => {
     return new Set(slots.flatMap((s) => s.assigned.map((a) => a.memberId)));
   }, [slots]);
@@ -480,25 +464,25 @@ export default function AdminAssignPage() {
           </h1>
         </div>
 
-        {/* 날짜 선택 네비게이션 */}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        {/* 날짜 선택 네비게이션 영역 (높이 및 폰트 통일) */}
+        <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handlePrevLesson}
             disabled={currentLessonIndex <= 0}
-            className="flex items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#1C2B33]/80 disabled:opacity-30 hover:bg-[#1C2B33]/5"
+            className="flex h-8 items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
             aria-label="이전 레슨일"
           >
             ◀ 이전
           </button>
 
-          <div className="rounded-full border border-[#1C2B33]/20 bg-white px-4 py-1.5 text-center shadow-sm">
+          <div className="flex h-8 items-center justify-center rounded-full border border-[#1C2B33]/20 bg-white px-3.5 shadow-xs">
             {selectedDate ? (
-              <span className="font-[family-name:var(--font-mono-club)] text-sm font-bold text-[#1C2B33]">
+              <span className="font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#1C2B33]">
                 {selectedDate} ({dowLabel(selectedDate)})
               </span>
             ) : (
-              <span className="text-sm text-[#1C2B33]/40">선택된 날짜 없음</span>
+              <span className="text-xs text-[#1C2B33]/40">선택된 날짜 없음</span>
             )}
           </div>
 
@@ -509,7 +493,7 @@ export default function AdminAssignPage() {
               currentLessonIndex === -1 ||
               currentLessonIndex >= navigableLessonDates.length - 1
             }
-            className="flex items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#1C2B33]/80 disabled:opacity-30 hover:bg-[#1C2B33]/5"
+            className="flex h-8 items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
             aria-label="다음 레슨일"
           >
             다음 ▶
@@ -519,9 +503,9 @@ export default function AdminAssignPage() {
             type="button"
             onClick={() => setCalendarOpen((v) => !v)}
             className={
-              'rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ' +
+              'flex h-8 items-center rounded-full px-3 text-xs font-semibold transition-colors ' +
               (calendarOpen
-                ? 'bg-[#1C2B33] text-white shadow-sm'
+                ? 'bg-[#1C2B33] text-white shadow-xs'
                 : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
             }
           >
@@ -618,7 +602,6 @@ export default function AdminAssignPage() {
           </div>
         )}
 
-        {/* 액션 버튼 바 */}
         {selectedDate && hasAnyAssignment && (
           <div className="mt-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -742,7 +725,6 @@ export default function AdminAssignPage() {
                     }
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* 배정 완료된 회원 칩들 */}
                       {slot.assigned.map((a) => {
                         const isThisDragging = draggedItem?.lessonId === a.lessonId;
                         const isCompleted = !!a.isCompleted;
@@ -814,7 +796,6 @@ export default function AdminAssignPage() {
                         );
                       })}
 
-                      {/* 아담한 '이름' 버튼 */}
                       {Array.from({ length: emptySlotsCount }).map((_, idx) => (
                         <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block">
                           <select
@@ -841,7 +822,6 @@ export default function AdminAssignPage() {
                         </div>
                       ))}
 
-                      {/* 중복 토글 버튼 */}
                       {!isFull && (
                         <button
                           type="button"
@@ -876,7 +856,6 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
-      {/* 🎯 1.5초 디바운스 적용된 하단 액션 바 */}
       {showSaveBar && isDirty && (
         <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           <span className="text-xs text-white/70">수정된 내용이 있습니다</span>
@@ -898,7 +877,6 @@ export default function AdminAssignPage() {
         </div>
       )}
 
-      {/* 1초 알림 토스트 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
