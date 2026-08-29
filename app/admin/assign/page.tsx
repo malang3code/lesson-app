@@ -100,10 +100,27 @@ export default function AdminAssignPage() {
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
 
-  // 변경사항 감지 (Dirty Check)
+  // 변경사항 실시간 감지 (Dirty Check)
   const isDirty = useMemo(() => {
     return JSON.stringify(slots) !== JSON.stringify(originalSlots);
   }, [slots, originalSlots]);
+
+  // 🎯 1.5초 디바운스(Debounce)로 하단 저장 바 노출 제어
+  const [showSaveBar, setShowSaveBar] = useState(false);
+
+  useEffect(() => {
+    if (!isDirty) {
+      setShowSaveBar(false);
+      return;
+    }
+
+    // 변경사항이 생기면 1.5초 타이머 시작 (이벤트가 계속 오면 이전 타이머 자동 취소)
+    const timer = setTimeout(() => {
+      setShowSaveBar(true);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [isDirty, slots]);
 
   // 브라우저 닫기/새로고침 시 경고
   useEffect(() => {
@@ -355,13 +372,14 @@ export default function AdminAssignPage() {
     setSlots((prev) => prev.map((s) => ({ ...s, assigned: [] })));
   };
 
-  // 🎯 1. 팝업 없이 즉시 되돌리기 실행
+  // 팝업 없이 즉시 되돌리기 실행
   const handleRevert = () => {
     setSlots(originalSlots);
+    setShowSaveBar(false);
     showToast('원래대로 되돌렸습니다.');
   };
 
-  // 🎯 2. 최종 DB 일괄 저장
+  // 최종 DB 일괄 저장
   const handleSaveChanges = async () => {
     if (!selectedDate || saving) return;
     setSaving(true);
@@ -390,6 +408,7 @@ export default function AdminAssignPage() {
       }
 
       setOriginalSlots(slots);
+      setShowSaveBar(false);
       showToast('저장되었습니다.');
     } catch {
       showToast('저장 중 네트워크 오류가 발생했습니다.');
@@ -857,8 +876,8 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
-      {/* 🎯 수정사항 발생 시 하단 플로팅 바 (↺ 되돌리기 & 저장) */}
-      {isDirty && (
+      {/* 🎯 1.5초 디바운스 적용된 하단 액션 바 */}
+      {showSaveBar && isDirty && (
         <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           <span className="text-xs text-white/70">수정된 내용이 있습니다</span>
           <button
