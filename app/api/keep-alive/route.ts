@@ -21,11 +21,10 @@ export async function GET() {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Supabase가 잠들지 않도록 가벼운 1건 쿼리 실행
-    const { error } = await supabase
+    // 컬럼명 제약 없이 전체 개수만 가볍게 확인하여 DB Keep-Alive 유지
+    const { count, error } = await supabase
       .from('lesson_dates')
-      .select('id')
-      .limit(1);
+      .select('*', { count: 'exact', head: true });
 
     if (error) {
       console.error('Supabase Keep-Alive Query Error:', error);
@@ -35,6 +34,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       message: 'Supabase ping successful (Keep-Alive)',
+      totalLessonDates: count ?? 0,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
