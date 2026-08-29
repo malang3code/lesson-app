@@ -96,11 +96,9 @@ export default function AdminAssignPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // 마우스 & 터치 공용 드래그 상태
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
 
-  // 모바일 터치 드래그 위치 추적용 상태
   const [touchPos, setTouchPos] = useState<{ x: number; y: number } | null>(null);
   const isTouchDraggingRef = useRef(false);
 
@@ -112,7 +110,6 @@ export default function AdminAssignPage() {
     return JSON.stringify(slots) !== JSON.stringify(originalSlots);
   }, [slots, originalSlots]);
 
-  // 정원 초과 슬롯 검사 (Validation)
   const overCapacitySlots = useMemo(() => {
     return slots.filter((s) => s.assigned.length > s.capacity);
   }, [slots]);
@@ -333,7 +330,6 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 슬롯 간 이동 공통 처리 함수
   const moveMemberToSlot = useCallback(
     (movedLessonId: number | string, sourceSlotId: number, targetSlotId: number) => {
       if (sourceSlotId === targetSlotId) return;
@@ -359,7 +355,6 @@ export default function AdminAssignPage() {
     [slots]
   );
 
-  // PC 마우스 드롭
   const handleDropToSlot = (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem) return;
@@ -367,7 +362,6 @@ export default function AdminAssignPage() {
     setDraggedItem(null);
   };
 
-  // 모바일 터치 드래그 이벤트 핸들러
   const handleTouchStart = (
     e: React.TouchEvent,
     lessonId: number | string,
@@ -465,6 +459,7 @@ export default function AdminAssignPage() {
     }
   };
 
+  // 📷 캡처 & 공유 핸들러 (뷰어와 동일한 안정적 캡처 옵션)
   const handleShareImage = async () => {
     if (!captureRef.current || capturing || !selectedDate) return;
     setCapturing(true);
@@ -786,208 +781,223 @@ export default function AdminAssignPage() {
         )}
       </header>
 
-      {/* 본문 시간표 영역 */}
+      {/* 본문 시간표 영역 (캡처 대상) */}
       <main className="px-4 py-6 sm:px-8">
-        <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-2 sm:p-4 rounded-3xl">
-          <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
+        <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
+          
+          {/* 🎯 캡처 이미지 상단 날짜 헤더 (뷰어 화면과 완벽히 동일한 구조) */}
+          {selectedDate && (
+            <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
+              <div className="flex items-baseline gap-2">
+                <span className="font-[family-name:var(--font-display)] text-xl font-bold text-[#1C2B33]">
+                  {selectedDate} ({dowLabel(selectedDate)})
+                </span>
+                <span className="text-xs font-semibold text-[#1C2B33]/60">레슨 시간표</span>
+              </div>
+            </div>
+          )}
 
-          <div className="space-y-3">
-            {slots.map((slot) => {
-              const showAll = !!showAllOverride[slot.id];
-              const options = eligibleMembers.filter(
-                (m) => showAll || !assignedMemberIds.has(m.id)
-              );
-              const isOver = slot.assigned.length > slot.capacity;
-              const isFull = slot.assigned.length >= slot.capacity;
-              const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
-              const startH = slot.start_time.slice(0, 5);
-              const isDragOver = dragOverSlotId === slot.id;
+          <div className="relative">
+            <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
-              return (
-                <div key={slot.id} className="relative flex gap-3 sm:gap-6">
-                  <div className="w-[52px] shrink-0 pt-3 text-right sm:w-[68px]">
-                    <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-xl whitespace-nowrap">
-                      {startH}
-                    </span>
-                  </div>
+            <div className="space-y-3">
+              {slots.map((slot) => {
+                const assignedList = slot.assigned || [];
+                const capacity = slot.capacity || 2;
+                const showAll = !!showAllOverride[slot.id];
+                const options = eligibleMembers.filter(
+                  (m) => showAll || !assignedMemberIds.has(m.id)
+                );
+                const isOver = assignedList.length > capacity;
+                const isFull = assignedList.length >= capacity;
+                const emptySlotsCount = Math.max(0, capacity - assignedList.length);
+                const startH = (slot.start_time || '').slice(0, 5);
+                const isDragOver = dragOverSlotId === slot.id;
 
-                  <div
-                    className={
-                      'z-10 mt-4 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
-                      (isOver ? 'bg-[#B5482F] animate-pulse' : isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
-                    }
-                    style={{ marginLeft: '-6px' }}
-                  />
+                return (
+                  <div key={slot.id} className="relative flex gap-3 sm:gap-6">
+                    <div className="w-[52px] shrink-0 pt-3 text-right sm:w-[68px]">
+                      <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-xl whitespace-nowrap">
+                        {startH}
+                      </span>
+                    </div>
 
-                  {/* 슬롯 컨테이너 */}
-                  <div
-                    data-slot-id={slot.id}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      if (dragOverSlotId !== slot.id) {
-                        setDragOverSlotId(slot.id);
+                    <div
+                      className={
+                        'z-10 mt-4 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
+                        (isOver ? 'bg-[#B5482F] animate-pulse' : isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
                       }
-                    }}
-                    onDragLeave={() => {
-                      if (dragOverSlotId === slot.id) {
-                        setDragOverSlotId(null);
+                      style={{ marginLeft: '-6px' }}
+                    />
+
+                    {/* 슬롯 컨테이너 */}
+                    <div
+                      data-slot-id={slot.id}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (dragOverSlotId !== slot.id) {
+                          setDragOverSlotId(slot.id);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverSlotId === slot.id) {
+                          setDragOverSlotId(null);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        handleDropToSlot(slot.id);
+                      }}
+                      className={
+                        'relative flex-1 rounded-2xl border p-2.5 sm:p-3 transition-all ' +
+                        (isDragOver
+                          ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-md'
+                          : isOver
+                          ? 'border-[#B5482F] bg-[#B5482F]/5 shadow-sm'
+                          : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
                       }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      handleDropToSlot(slot.id);
-                    }}
-                    className={
-                      'relative flex-1 rounded-2xl border p-2.5 sm:p-3 transition-all ' +
-                      (isDragOver
-                        ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-md'
-                        : isOver
-                        ? 'border-[#B5482F] bg-[#B5482F]/5 shadow-sm'
-                        : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
-                    }
-                  >
-                    {/* ⚠️ 정원 초과 뱃지 */}
-                    {isOver && (
-                      <div className="absolute -top-2.5 right-3 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-xs whitespace-nowrap">
-                        <span>⚠️ 정원 초과</span>
-                        <span>({slot.assigned.length}/{slot.capacity})</span>
-                      </div>
-                    )}
+                    >
+                      {isOver && (
+                        <div className="absolute -top-2.5 right-3 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-xs whitespace-nowrap">
+                          <span>⚠️ 정원 초과</span>
+                          <span>({assignedList.length}/{capacity})</span>
+                        </div>
+                      )}
 
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      {slot.assigned.map((a) => {
-                        const isThisDragging = draggedItem?.lessonId === a.lessonId;
-                        const isCompleted = !!a.isCompleted;
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                        {assignedList.map((a) => {
+                          const isThisDragging = draggedItem?.lessonId === a.lessonId;
+                          const isCompleted = !!a.isCompleted;
 
-                        return (
-                          <span
-                            key={a.lessonId}
-                            draggable
-                            onDragStart={(e) => {
-                              setDraggedItem({
-                                lessonId: a.lessonId,
-                                sourceSlotId: slot.id,
-                                memberName: a.name,
-                              });
-                              e.dataTransfer.effectAllowed = 'move';
-                            }}
-                            onDragEnd={() => {
-                              setDraggedItem(null);
-                              setDragOverSlotId(null);
-                            }}
-                            onTouchStart={(e) =>
-                              handleTouchStart(e, a.lessonId, slot.id, a.name)
-                            }
-                            className={
-                              'group inline-flex h-[34px] max-w-full shrink-0 cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none touch-none active:cursor-grabbing ' +
-                              (isThisDragging
-                                ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
-                                : isCompleted
-                                ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
-                                : isOver
-                                ? 'bg-white text-[#B5482F] border-[#B5482F]/40 font-semibold'
-                                : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
-                            }
-                            title="터치/드래그하여 다른 시간대로 이동"
-                          >
-                            {/* 🎯 캡처 시 이름 잘림(truncate) 방지 */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleCompleted(a.lessonId);
+                          return (
+                            <span
+                              key={a.lessonId}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedItem({
+                                  lessonId: a.lessonId,
+                                  sourceSlotId: slot.id,
+                                  memberName: a.name,
+                                });
+                                e.dataTransfer.effectAllowed = 'move';
                               }}
-                              className={
-                                'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors ' +
-                                (isCompleted ? 'line-through text-[#1F6F63]' : isOver ? 'text-[#B5482F]' : 'text-[#1C2B33]')
+                              onDragEnd={() => {
+                                setDraggedItem(null);
+                                setDragOverSlotId(null);
+                              }}
+                              onTouchStart={(e) =>
+                                handleTouchStart(e, a.lessonId, slot.id, a.name)
                               }
+                              className={
+                                'group inline-flex h-[34px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none touch-none active:cursor-grabbing ' +
+                                (isThisDragging
+                                  ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
+                                  : isCompleted
+                                  ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
+                                  : isOver
+                                  ? 'bg-white text-[#B5482F] border-[#B5482F]/40 font-semibold'
+                                  : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
+                              }
+                              title="터치/드래그하여 다른 시간대로 이동"
                             >
-                              {a.name}
-                            </button>
-
-                            {showDetailInfo && (
-                              <span
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleCompleted(a.lessonId);
+                                }}
                                 className={
-                                  'whitespace-nowrap text-xs ' +
-                                  (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')
+                                  'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors ' +
+                                  (isCompleted ? 'line-through text-[#1F6F63]' : isOver ? 'text-[#B5482F]' : 'text-[#1C2B33]')
                                 }
                               >
-                                {a.department ?? '-'} {displayPhone(a.phone)}
-                              </span>
-                            )}
+                                {a.name}
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemove(a.lessonId);
+                              {showDetailInfo && (
+                                <span
+                                  className={
+                                    'whitespace-nowrap text-xs ' +
+                                    (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')
+                                  }
+                                >
+                                  {a.department ?? '-'} {displayPhone(a.phone)}
+                                </span>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemove(a.lessonId);
+                                }}
+                                className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
+                                aria-label="배정 즉시 삭제"
+                                title="배정 즉시 삭제"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          );
+                        })}
+
+                        {Array.from({ length: emptySlotsCount }).map((_, idx) => (
+                          <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block shrink-0">
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleAssign(slot.id, e.target.value);
+                                }
                               }}
-                              className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-xs text-[#B5482F]/60 hover:bg-[#B5482F]/10 hover:text-[#B5482F]"
-                              aria-label="배정 즉시 삭제"
-                              title="배정 즉시 삭제"
+                              className="h-[34px] w-[74px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
                             >
-                              ✕
-                            </button>
-                          </span>
-                        );
-                      })}
-
-                      {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                        <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block shrink-0">
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handleAssign(slot.id, e.target.value);
-                              }
-                            }}
-                            className="h-[34px] w-[74px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
-                          >
-                            <option value="" disabled hidden>
-                              이름
-                            </option>
-                            {options.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name} {assignedMemberIds.has(m.id) ? '(중복)' : ''}
+                              <option value="" disabled hidden>
+                                이름
                               </option>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[#1C2B33]/40">
-                            ▼
+                              {options.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name} {assignedMemberIds.has(m.id) ? '(중복)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[#1C2B33]/40">
+                              ▼
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
 
-                      {!isFull && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setShowAllOverride((prev) => ({ ...prev, [slot.id]: !showAll }))
-                          }
-                          className={
-                            'h-[34px] shrink-0 rounded-full px-2.5 text-xs font-medium transition-colors ' +
-                            (showAll
-                              ? 'bg-[#C98A2B] text-white'
-                              : 'bg-[#1C2B33]/5 text-[#1C2B33]/45 hover:bg-[#1C2B33]/10')
-                          }
-                          title="당일 중복 배정 수강생 포함 토글"
-                        >
-                          중복
-                        </button>
-                      )}
+                        {!isFull && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowAllOverride((prev) => ({ ...prev, [slot.id]: !showAll }))
+                            }
+                            className={
+                              'h-[34px] shrink-0 rounded-full px-2.5 text-xs font-medium transition-colors ' +
+                              (showAll
+                                ? 'bg-[#C98A2B] text-white'
+                                : 'bg-[#1C2B33]/5 text-[#1C2B33]/45 hover:bg-[#1C2B33]/10')
+                            }
+                            title="당일 중복 배정 수강생 포함 토글"
+                          >
+                            중복
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-            {!loading && selectedDate && slots.length === 0 && (
-              <p className="pl-[68px] text-sm text-[#1C2B33]/40">
-                {activeLessonDateSet.has(selectedDate)
-                  ? '이 날짜에는 시간대 슬롯이 없습니다.'
-                  : '등록된 레슨일이 아닙니다.'}
-              </p>
-            )}
+              {!loading && selectedDate && slots.length === 0 && (
+                <p className="pl-[68px] text-sm text-[#1C2B33]/40">
+                  {activeLessonDateSet.has(selectedDate)
+                    ? '이 날짜에는 시간대 슬롯이 없습니다.'
+                    : '등록된 레슨일이 아닙니다.'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </main>
@@ -1007,7 +1017,7 @@ export default function AdminAssignPage() {
         </div>
       )}
 
-      {/* 🎯 하단 플로팅 저장 바 (화면 비율 가변 너비 + 1줄 고정 정렬) */}
+      {/* 하단 플로팅 저장 바 */}
       {showSaveBar && isDirty && (
         <div className="fixed bottom-6 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           <div className="min-w-0 flex-1 truncate">
