@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ViewerDrawer from '../../../components/ViewerDrawer';
+import { toPng } from 'html-to-image';
 
 type AssignedItem = {
   lessonId: number | string;
@@ -49,8 +50,12 @@ export default function ViewerAssignPage() {
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
   const [toastMessage, setToastMessage] = useState('');
+
+  // 캡처 영역 참조
+  const captureRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -196,14 +201,65 @@ export default function ViewerAssignPage() {
     loadData();
   }, [loadData]);
 
+  // 📷 모바일 이미지 캡처 & 공유 핸들러
+  const handleShareImage = async () => {
+    if (!captureRef.current || capturing || !selectedDate) return;
+    setCapturing(true);
+    showToast('이미지 생성 중...');
+
+    try {
+      const dataUrl = await toPng(captureRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#FAFAF7',
+      });
+
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `lesson-${selectedDate}.png`, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `${selectedDate} 레슨 시간표`,
+          text: `[레슨 시간표] ${selectedDate} (${dowLabel(selectedDate)}) 일정입니다.`,
+          files: [file],
+        });
+        showToast('공유창을 열었습니다.');
+      } else {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `레슨시간표_${selectedDate}.png`;
+        link.click();
+        showToast('시간표 이미지가 저장되었습니다.');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        showToast('이미지 생성 실패');
+      }
+    } finally {
+      setCapturing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FAFAF7] pb-24 text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <ViewerDrawer />
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
             레슨 시간표
           </h1>
+
+          {/* 🎯 레슨 시간표 바로 오른쪽에 컴팩트하게 배치 */}
+          <button
+            type="button"
+            onClick={handleShareImage}
+            disabled={capturing || !selectedDate || slots.length === 0}
+            className="flex h-8 items-center gap-1.5 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33] shadow-xs transition-all active:scale-95 hover:bg-[#1C2B33]/5 disabled:opacity-40"
+          >
+            <span className="text-xs">📷</span>
+            <span>{capturing ? '생성 중...' : '이미지 공유'}</span>
+          </button>
         </div>
 
         {/* 날짜 네비게이션 */}
@@ -346,10 +402,10 @@ export default function ViewerAssignPage() {
         )}
       </header>
 
-      {/* 본문 시간표 영역 (순수 조회 전용) */}
+      {/* 본문 시간표 영역 */}
       <main className="px-5 py-6 sm:px-8">
-        <div className="relative max-w-2xl">
-          <div className="absolute top-2 bottom-2 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
+        <div ref={captureRef} className="relative max-w-2xl bg-[#FAFAF7] p-2 rounded-3xl">
+          <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
           <div className="space-y-3">
             {slots.map((slot) => {
@@ -393,7 +449,6 @@ export default function ViewerAssignPage() {
                         );
                       })}
 
-                      {/* 빈 슬롯 표시 (단순 공백 표시용) */}
                       {Array.from({ length: emptySlotsCount }).map((_, idx) => (
                         <div
                           key={`empty-${slot.id}-${idx}`}

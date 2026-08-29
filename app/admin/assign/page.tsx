@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import AdminDrawer from '@/components/AdminDrawer';
+import { toPng } from 'html-to-image';
 
 type Member = {
   id: number;
@@ -77,8 +78,11 @@ export default function AdminAssignPage() {
   const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
   const [toastMessage, setToastMessage] = useState('');
+
+  const captureRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -88,7 +92,7 @@ export default function AdminAssignPage() {
     if (!toastMessage) return;
     const timer = setTimeout(() => {
       setToastMessage('');
-    }, 1000);
+    }, 1200);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
@@ -102,6 +106,13 @@ export default function AdminAssignPage() {
   const isDirty = useMemo(() => {
     return JSON.stringify(slots) !== JSON.stringify(originalSlots);
   }, [slots, originalSlots]);
+
+  // 🎯 정원 초과 슬롯 검사 (Validation)
+  const overCapacitySlots = useMemo(() => {
+    return slots.filter((s) => s.assigned.length > s.capacity);
+  }, [slots]);
+
+  const hasOverCapacity = overCapacitySlots.length > 0;
 
   const [showSaveBar, setShowSaveBar] = useState(false);
 
@@ -317,18 +328,12 @@ export default function AdminAssignPage() {
     );
   };
 
+  // 🎯 정원 마감 제한 없이 자유롭게 드롭 허용
   const handleDropToSlot = (targetSlotId: number) => {
     setDragOverSlotId(null);
     if (!draggedItem) return;
 
     if (draggedItem.sourceSlotId === targetSlotId) {
-      setDraggedItem(null);
-      return;
-    }
-
-    const targetSlot = slots.find((s) => s.id === targetSlotId);
-    if (targetSlot && targetSlot.assigned.length >= targetSlot.capacity) {
-      showToast('해당 시간대는 이미 정원 마감되었습니다.');
       setDraggedItem(null);
       return;
     }
@@ -365,8 +370,16 @@ export default function AdminAssignPage() {
     showToast('원래대로 되돌렸습니다.');
   };
 
+  // 🎯 정원 초과 시 저장 차단 검증
   const handleSaveChanges = async () => {
     if (!selectedDate || saving) return;
+
+    if (hasOverCapacity) {
+      const overTimes = overCapacitySlots.map((s) => s.start_time.slice(0, 5)).join(', ');
+      showToast(`⚠️ 정원 초과된 시간대(${overTimes})가 있습니다. 2명 이하로 맞춰주세요.`);
+      return;
+    }
+
     setSaving(true);
     try {
       const assignments = slots.flatMap((slot) =>
@@ -399,6 +412,45 @@ export default function AdminAssignPage() {
       showToast('저장 중 네트워크 오류가 발생했습니다.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleShareImage = async () => {
+    if (!captureRef.current || capturing || !selectedDate) return;
+    setCapturing(true);
+    showToast('이미지 생성 중...');
+
+    try {
+      const dataUrl = await toPng(captureRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#FAFAF7',
+      });
+
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `lesson-${selectedDate}.png`, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `${selectedDate} 레슨 시간표`,
+          text: `[레슨 시간표] ${selectedDate} (${dowLabel(selectedDate)}) 일정입니다.`,
+          files: [file],
+        });
+        showToast('공유창을 열었습니다.');
+      } else {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `레슨시간표_${selectedDate}.png`;
+        link.click();
+        showToast('시간표 이미지가 저장되었습니다.');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        showToast('이미지 생성 실패');
+      }
+    } finally {
+      setCapturing(false);
     }
   };
 
@@ -455,16 +507,26 @@ export default function AdminAssignPage() {
   const hasAnyAssignment = slots.some((s) => s.assigned.length > 0);
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] pb-24 text-[#1C2B33]">
+    <div className="min-h-screen bg-[#FAFAF7] pb-28 text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <AdminDrawer />
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
             레슨 시간표
           </h1>
+
+          <button
+            type="button"
+            onClick={handleShareImage}
+            disabled={capturing || !selectedDate || slots.length === 0}
+            className="flex h-8 items-center gap-1.5 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33] shadow-xs transition-all active:scale-95 hover:bg-[#1C2B33]/5 disabled:opacity-40"
+          >
+            <span className="text-xs">📷</span>
+            <span>{capturing ? '생성 중...' : '이미지 공유'}</span>
+          </button>
         </div>
 
-        {/* 날짜 선택 네비게이션 영역 (높이 및 폰트 통일) */}
+        {/* 날짜 선택 네비게이션 영역 */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -670,9 +732,10 @@ export default function AdminAssignPage() {
         )}
       </header>
 
+      {/* 본문 시간표 영역 */}
       <main className="px-5 py-6 sm:px-8">
-        <div className="relative max-w-2xl">
-          <div className="absolute top-2 bottom-2 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
+        <div ref={captureRef} className="relative max-w-2xl bg-[#FAFAF7] p-2 rounded-3xl">
+          <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
           <div className="space-y-3">
             {slots.map((slot) => {
@@ -680,6 +743,7 @@ export default function AdminAssignPage() {
               const options = eligibleMembers.filter(
                 (m) => showAll || !assignedMemberIds.has(m.id)
               );
+              const isOver = slot.assigned.length > slot.capacity;
               const isFull = slot.assigned.length >= slot.capacity;
               const emptySlotsCount = Math.max(0, slot.capacity - slot.assigned.length);
               const startH = slot.start_time.slice(0, 5);
@@ -696,11 +760,12 @@ export default function AdminAssignPage() {
                   <div
                     className={
                       'z-10 mt-4 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
-                      (isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
+                      (isOver ? 'bg-[#B5482F] animate-pulse' : isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
                     }
                     style={{ marginLeft: '-6px' }}
                   />
 
+                  {/* 🎯 정원 초과 시 붉은색 테두리 + 배경 경고 스타일 */}
                   <div
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -718,12 +783,22 @@ export default function AdminAssignPage() {
                       handleDropToSlot(slot.id);
                     }}
                     className={
-                      'flex-1 rounded-2xl border p-3 transition-all ' +
+                      'relative flex-1 rounded-2xl border p-3 transition-all ' +
                       (isDragOver
                         ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/5 ring-2 ring-[#1F6F63]/20 shadow-md'
+                        : isOver
+                        ? 'border-[#B5482F] bg-[#B5482F]/5 shadow-sm'
                         : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
                     }
                   >
+                    {/* ⚠️ 정원 초과 뱃지 */}
+                    {isOver && (
+                      <div className="absolute -top-2.5 right-3 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                        <span>⚠️ 정원 초과</span>
+                        <span>({slot.assigned.length}/{slot.capacity})</span>
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-2">
                       {slot.assigned.map((a) => {
                         const isThisDragging = draggedItem?.lessonId === a.lessonId;
@@ -751,6 +826,8 @@ export default function AdminAssignPage() {
                                 ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
                                 : isCompleted
                                 ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
+                                : isOver
+                                ? 'bg-white text-[#B5482F] border-[#B5482F]/40 font-semibold'
                                 : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                             }
                             title="클릭: 완료/출석 토글 / 마우스 드래그: 시간대 이동"
@@ -763,7 +840,7 @@ export default function AdminAssignPage() {
                               }}
                               className={
                                 'cursor-pointer truncate font-medium text-sm transition-colors ' +
-                                (isCompleted ? 'line-through text-[#1F6F63]' : 'text-[#1C2B33]')
+                                (isCompleted ? 'line-through text-[#1F6F63]' : isOver ? 'text-[#B5482F]' : 'text-[#1C2B33]')
                               }
                             >
                               {a.name}
@@ -856,9 +933,17 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
+      {/* 🎯 하단 플로팅 저장 바 (초과 시 비활성화 & 안내) */}
       {showSaveBar && isDirty && (
         <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1C2B33] px-5 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <span className="text-xs text-white/70">수정된 내용이 있습니다</span>
+          {hasOverCapacity ? (
+            <span className="text-xs font-semibold text-[#E57373]">
+              ⚠️ 정원 초과된 슬롯({overCapacitySlots.length}개)이 있습니다
+            </span>
+          ) : (
+            <span className="text-xs text-white/70">수정된 내용이 있습니다</span>
+          )}
+
           <button
             type="button"
             onClick={handleRevert}
@@ -869,8 +954,13 @@ export default function AdminAssignPage() {
           <button
             type="button"
             onClick={handleSaveChanges}
-            disabled={saving}
-            className="rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow hover:bg-[#1F6F63]/90 disabled:opacity-50"
+            disabled={saving || hasOverCapacity}
+            className={
+              'rounded-full px-4 py-1.5 text-xs font-bold text-white shadow transition-all ' +
+              (hasOverCapacity
+                ? 'bg-white/20 text-white/40 cursor-not-allowed'
+                : 'bg-[#1F6F63] hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50')
+            }
           >
             {saving ? '저장 중...' : '저장'}
           </button>
