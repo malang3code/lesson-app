@@ -629,7 +629,9 @@ export default function AdminAssignPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setCopyPanelOpen((v) => !v)}
+                onClick={() => {
+                  setCopyPanelOpen((v) => !v);
+                }}
                 className="rounded-full border border-[#1C2B33]/15 bg-white px-4 py-1.5 text-sm font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
               >
                 {copyPanelOpen ? '복사 닫기' : '날짜복사'}
@@ -768,7 +770,7 @@ export default function AdminAssignPage() {
                               setDragOverSlotId(null);
                             }}
                             className={
-                              'group inline-flex h-[34px] min-w-[92px] cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none active:cursor-grabbing ' +
+                              'group inline-flex h-[34px] cursor-grab items-center justify-between gap-1.5 rounded-full border px-3 text-sm transition-all select-none active:cursor-grabbing ' +
                               (isThisDragging
                                 ? 'opacity-30 scale-95 bg-[#1C2B33]/10 border-transparent'
                                 : isCompleted
@@ -818,7 +820,7 @@ export default function AdminAssignPage() {
                         );
                       })}
 
-                      {/* 🎯 처음부터 정원(기본 2개)만큼 '이름' 배정 버튼 노출 & 칩과 동일한 크기(h-[34px], min-w-[92px]) */}
+                      {/* 🎯 배정 후 칩 너비와 완벽하게 일치시킨 아담한 '이름' 버튼 (w-[76px]) */}
                       {Array.from({ length: emptySlotsCount }).map((_, idx) => (
                         <div key={`empty-slot-${slot.id}-${idx}`} className="relative inline-block">
                           <select
@@ -828,7 +830,7 @@ export default function AdminAssignPage() {
                                 handleAssign(slot.id, e.target.value, showAll);
                               }
                             }}
-                            className="h-[34px] min-w-[92px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 px-3.5 pr-6 text-center text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
+                            className="h-[34px] w-[76px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
                           >
                             <option value="" disabled hidden>
                               이름
@@ -839,8 +841,7 @@ export default function AdminAssignPage() {
                               </option>
                             ))}
                           </select>
-                          {/* 미니멀 드롭다운 화살표 아이콘 */}
-                          <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-[#1C2B33]/40">
+                          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[#1C2B33]/40">
                             ▼
                           </div>
                         </div>
