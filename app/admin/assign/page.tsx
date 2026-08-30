@@ -61,8 +61,9 @@ function todayStr() {
   );
 }
 
+// 🎯 전화번호 포맷팅 (공백 시 010-0000-0000 기본값 반환)
 function displayPhone(phoneStr: string | null | undefined): string {
-  if (!phoneStr) return '-';
+  if (!phoneStr || !phoneStr.trim()) return '010-0000-0000';
   const clean = phoneStr.replace(/[^0-9]/g, '');
   if (clean.length === 11) {
     return clean.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
@@ -287,7 +288,7 @@ export default function AdminAssignPage() {
       return;
     }
     setLoading(true);
-    setSlots([]); // 🎯 날짜 변경 시 이전 슬롯을 즉시 비워 (화)/(목) 잔상 플리커 방지
+    setSlots([]);
     try {
       const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
@@ -562,7 +563,6 @@ export default function AdminAssignPage() {
     return new Set(slots.flatMap((s) => s.assigned.map((a) => a.memberId)));
   }, [slots]);
 
-  // 현재 선택된 날짜의 요일 (2: 화, 4: 목 등)
   const currentSelectedDow = useMemo(() => {
     return selectedDate ? getDowNumber(selectedDate) : null;
   }, [selectedDate]);
@@ -867,7 +867,6 @@ export default function AdminAssignPage() {
             <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
             <div className="space-y-3">
-              {/* 🎯 로딩 중일 때 표시 */}
               {loading ? (
                 <div className="py-16 text-center text-sm font-medium text-[#1C2B33]/40 animate-pulse">
                   시간표 불러오는 중...
@@ -878,7 +877,6 @@ export default function AdminAssignPage() {
                   const capacity = slot.capacity || 2;
                   const isExceptionActive = !!showAllOverride[slot.id];
 
-                  // 요일별 멤버 필터링
                   const options = eligibleMembers.filter((m) => {
                     if (isExceptionActive) {
                       return true;
@@ -1027,6 +1025,7 @@ export default function AdminAssignPage() {
                                     : ''}
                                 </button>
 
+                                {/* 🎯 정보 버튼 활성화 시: 전화번호 ➔ 부서 순서로 표시 */}
                                 {showDetailInfo && (
                                   <span
                                     className={
@@ -1036,7 +1035,7 @@ export default function AdminAssignPage() {
                                         : 'text-[#1C2B33]/40')
                                     }
                                   >
-                                    {a.department ?? '-'} {displayPhone(a.phone)}
+                                    {displayPhone(a.phone)} {a.department ?? '-'}
                                   </span>
                                 )}
 
