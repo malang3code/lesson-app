@@ -4,11 +4,14 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import AdminDrawer from '@/components/AdminDrawer';
 import { toPng } from 'html-to-image';
 
+type LessonDay = 'TUE' | 'THU' | 'BOTH';
+
 type Member = {
   id: number;
   name: string;
   department: string | null;
   phone: string | null;
+  lesson_day?: LessonDay;
   alreadyAssignedToday?: boolean;
 };
 
@@ -18,6 +21,7 @@ type AssignedItem = {
   name: string;
   department: string | null;
   phone: string | null;
+  lesson_day?: LessonDay;
   isCompleted?: boolean;
 };
 
@@ -39,6 +43,11 @@ function dowLabel(dateStr: string) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dow = new Date(y, m - 1, d).getDay();
   return ['일', '월', '화', '수', '목', '금', '토'][dow];
+}
+
+function getDowNumber(dateStr: string) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay();
 }
 
 function todayStr() {
@@ -302,6 +311,7 @@ export default function AdminAssignPage() {
               name: targetMember.name,
               department: targetMember.department,
               phone: targetMember.phone,
+              lesson_day: targetMember.lesson_day,
               isCompleted: false,
             },
           ],
@@ -503,6 +513,11 @@ export default function AdminAssignPage() {
     return new Set(slots.flatMap((s) => s.assigned.map((a) => a.memberId)));
   }, [slots]);
 
+  // 현재 선택된 날짜의 요일 (2: 화, 4: 목 등)
+  const currentSelectedDow = useMemo(() => {
+    return selectedDate ? getDowNumber(selectedDate) : null;
+  }, [selectedDate]);
+
   const validCopyDates = useMemo(() => {
     return rawDates
       .filter((d) => d.slice(0, 7) >= currentYm && d !== selectedDate)
@@ -575,7 +590,7 @@ export default function AdminAssignPage() {
           </button>
         </div>
 
-        {/* 🎯 날짜 뱃지 제거 & '📅 캘린더'로 축소된 상단 네비게이션 */}
+        {/* 🎯 상단 네비게이션 */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -775,7 +790,7 @@ export default function AdminAssignPage() {
       <main className="px-4 py-6 sm:px-8">
         <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
           
-          {/* 🎯 캡처 이미지 상단 날짜 헤더 (뷰어와 동일한 최상단 독립 배치) */}
+          {/* 🎯 캡처 이미지 상단 날짜 헤더 */}
           {selectedDate && (
             <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
               <div className="flex items-baseline gap-2">
@@ -787,7 +802,7 @@ export default function AdminAssignPage() {
             </div>
           )}
 
-          {/* 🎯 슬롯 목록 및 세로선 영역을 별도 컨테이너로 분리하여 날짜 헤더 침범 방지 */}
+          {/* 슬롯 목록 및 세로선 영역 */}
           <div className="relative">
             <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
 
@@ -795,10 +810,26 @@ export default function AdminAssignPage() {
               {slots.map((slot) => {
                 const assignedList = slot.assigned || [];
                 const capacity = slot.capacity || 2;
-                const showAll = !!showAllOverride[slot.id];
-                const options = eligibleMembers.filter(
-                  (m) => showAll || !assignedMemberIds.has(m.id)
-                );
+                const isExceptionActive = !!showAllOverride[slot.id]; // 🎯 예외 토글 상태
+                
+                // 🎯 요일별 멤버 필터링 로직
+                // currentSelectedDow: 2(화), 4(목)
+                const options = eligibleMembers.filter((m) => {
+                  if (isExceptionActive) {
+                    // 예외 모드: 모든 활성 멤버 허용
+                    return true;
+                  }
+                  
+                  // 미배정자만
+                  if (assignedMemberIds.has(m.id)) return false;
+
+                  const memberDay = m.lesson_day || 'TUE';
+                  if (memberDay === 'BOTH') return true;
+                  if (currentSelectedDow === 2) return memberDay === 'TUE';
+                  if (currentSelectedDow === 4) return memberDay === 'THU';
+                  return true;
+                });
+
                 const isOver = assignedList.length > capacity;
                 const isFull = assignedList.length >= capacity;
                 const emptySlotsCount = Math.max(0, capacity - assignedList.length);
@@ -859,6 +890,13 @@ export default function AdminAssignPage() {
                         {assignedList.map((a) => {
                           const isThisDragging = draggedItem?.lessonId === a.lessonId;
                           const isCompleted = !!a.isCompleted;
+                          
+                          // 🎯 타 요일 교차 배정 여부 판별
+                          const memDay = a.lesson_day || 'TUE';
+                          const isCrossDay =
+                            memDay !== 'BOTH' &&
+                            ((currentSelectedDow === 2 && memDay === 'THU') ||
+                             (currentSelectedDow === 4 && memDay === 'TUE'));
 
                           return (
                             <span
@@ -887,6 +925,8 @@ export default function AdminAssignPage() {
                                   ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
                                   : isOver
                                   ? 'bg-white text-[#B5482F] border-[#B5482F]/40 font-semibold'
+                                  : isCrossDay
+                                  ? 'bg-[#FFF8E7] text-[#C98A2B] border-[#C98A2B]/40 font-medium'
                                   : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                               }
                               title="터치/드래그하여 다른 시간대로 이동"
@@ -898,11 +938,22 @@ export default function AdminAssignPage() {
                                   handleToggleCompleted(a.lessonId);
                                 }}
                                 className={
-                                  'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors ' +
-                                  (isCompleted ? 'line-through text-[#1F6F63]' : isOver ? 'text-[#B5482F]' : 'text-[#1C2B33]')
+                                  'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors flex items-center gap-1 ' +
+                                  (isCompleted
+                                    ? 'line-through text-[#1F6F63]'
+                                    : isOver
+                                    ? 'text-[#B5482F]'
+                                    : isCrossDay
+                                    ? 'text-[#A06C18]'
+                                    : 'text-[#1C2B33]')
                                 }
                               >
-                                {a.name}
+                                <span>{a.name}</span>
+                                {isCrossDay && (
+                                  <span className="text-[10px] font-bold opacity-80">
+                                    ({memDay === 'TUE' ? '화' : '목'})
+                                  </span>
+                                )}
                               </button>
 
                               {showDetailInfo && (
@@ -941,16 +992,29 @@ export default function AdminAssignPage() {
                                   handleAssign(slot.id, e.target.value);
                                 }
                               }}
-                              className="h-[34px] w-[74px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
+                              className="h-[34px] w-[78px] cursor-pointer appearance-none rounded-full border border-dashed border-[#1C2B33]/25 bg-[#FAFAF7]/60 pl-2.5 pr-5 text-left text-sm font-medium text-[#1C2B33]/60 transition-colors hover:border-[#1C2B33]/50 hover:bg-[#FAFAF7] hover:text-[#1C2B33] focus:border-[#1C2B33] focus:outline-none"
                             >
                               <option value="" disabled hidden>
                                 이름
                               </option>
-                              {options.map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name} {assignedMemberIds.has(m.id) ? '(중복)' : ''}
-                                </option>
-                              ))}
+                              {options.map((m) => {
+                                const isDup = assignedMemberIds.has(m.id);
+                                const memDay = m.lesson_day || 'TUE';
+                                const isOtherDay =
+                                  memDay !== 'BOTH' &&
+                                  ((currentSelectedDow === 2 && memDay === 'THU') ||
+                                   (currentSelectedDow === 4 && memDay === 'TUE'));
+
+                                let suffix = '';
+                                if (isDup) suffix = '(중복)';
+                                else if (isOtherDay) suffix = `(${memDay === 'TUE' ? '화' : '목'})`;
+
+                                return (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} {suffix}
+                                  </option>
+                                );
+                              })}
                             </select>
                             <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[#1C2B33]/40">
                               ▼
@@ -958,21 +1022,25 @@ export default function AdminAssignPage() {
                           </div>
                         ))}
 
+                        {/* 🎯 기존 [중복] ➔ [예외] 토글 버튼으로 변경 */}
                         {!isFull && (
                           <button
                             type="button"
                             onClick={() =>
-                              setShowAllOverride((prev) => ({ ...prev, [slot.id]: !showAll }))
+                              setShowAllOverride((prev) => ({
+                                ...prev,
+                                [slot.id]: !isExceptionActive,
+                              }))
                             }
                             className={
-                              'h-[34px] shrink-0 rounded-full px-2.5 text-xs font-medium transition-colors ' +
-                              (showAll
-                                ? 'bg-[#C98A2B] text-white'
+                              'h-[34px] shrink-0 rounded-full px-2.5 text-xs font-semibold transition-colors ' +
+                              (isExceptionActive
+                                ? 'bg-[#C98A2B] text-white shadow-xs'
                                 : 'bg-[#1C2B33]/5 text-[#1C2B33]/45 hover:bg-[#1C2B33]/10')
                             }
-                            title="당일 중복 배정 수강생 포함 토글"
+                            title="타 요일 멤버 및 당일 중복 배정 포함"
                           >
-                            중복
+                            예외
                           </button>
                         )}
                       </div>
@@ -993,7 +1061,7 @@ export default function AdminAssignPage() {
         </div>
       </main>
 
-      {/* 모바일 터치 드래그 중 손가락을 따라다니는 플로팅 배지 */}
+      {/* 모바일 터치 드래그 플로팅 배지 */}
       {touchPos && draggedItem && (
         <div
           style={{

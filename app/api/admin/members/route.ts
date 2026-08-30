@@ -1,67 +1,93 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
 
-// 회원 목록 전체 조회 (활성/비활성 모두 포함)
+// 1. 회원 목록 조회 (GET)
 export async function GET() {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data: members, error } = await supabase
       .from('members')
       .select('*')
-      .order('name');
+      .order('is_active', { ascending: false })
+      .order('name', { ascending: true });
 
-    if (error) throw error;
-    return NextResponse.json({ members: data });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ members });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// 신규 회원 추가
-export async function POST(req: NextRequest) {
+// 2. 신규 회원 등록 (POST)
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    const { name, department, phone } = body;
+    const body = await request.json();
+    const { employee_no, name, department, phone, lesson_day, is_active } = body;
 
-    if (!name) {
-      return NextResponse.json({ error: '이름은 필수 항목입니다.' }, { status: 400 });
+    if (!name || !name.trim()) {
+      return NextResponse.json({ error: '이름을 입력해주세요.' }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from('members')
-      .insert([{ name, department: department || null, phone: phone || null, is_active: true }])
+      .insert([
+        {
+          employee_no: employee_no ? employee_no.trim() : `EMP-${Date.now()}`,
+          name: name.trim(),
+          department: department ? department.trim() : null,
+          phone: phone ? phone.trim() : null,
+          lesson_day: lesson_day || 'TUE',
+          is_active: is_active ?? true,
+        },
+      ])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     return NextResponse.json({ member: data });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// 회원 활성화/비활성화 상태 변경
-export async function PATCH(req: NextRequest) {
+// 3. 회원 정보 수정 (PUT)
+export async function PUT(request: Request) {
   try {
-    const body = await req.json();
-    const { id, is_active } = body;
+    const body = await request.json();
+    const { id, employee_no, name, department, phone, lesson_day, is_active } = body;
 
-    if (id === undefined || is_active === undefined) {
-      return NextResponse.json({ error: 'id와 is_active 값은 필수입니다.' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: '회원 ID가 누락되었습니다.' }, { status: 400 });
+    }
+    if (!name || !name.trim()) {
+      return NextResponse.json({ error: '이름을 입력해주세요.' }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from('members')
-      .update({ is_active })
+      .update({
+        employee_no: employee_no ? employee_no.trim() : undefined,
+        name: name.trim(),
+        department: department ? department.trim() : null,
+        phone: phone ? phone.trim() : null,
+        lesson_day: lesson_day || 'TUE',
+        is_active: is_active ?? true,
+      })
       .eq('id', id)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     return NextResponse.json({ member: data });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

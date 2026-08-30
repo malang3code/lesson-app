@@ -19,7 +19,7 @@ function buildDisplayName(
     (m) => (m.employee_no || '').slice(2, 4) === year2
   );
 
-  // 🎯 입사연도까지 같으면 끝 4자리 붙임: 예) 김태영15(0230)
+  // 입사연도까지 같으면 끝 4자리 붙임: 예) 김태영15(0230)
   if (sameYearMembers.length > 1) {
     const last4 = empNo.slice(-4);
     return `${member.name}${year2}(${last4})`;
@@ -41,10 +41,10 @@ export async function GET(req: NextRequest) {
     const [y, m, d] = date.split('-').map(Number);
     const dow = new Date(y, m - 1, d).getDay();
 
-    // 1. 활성 회원 목록 조회
+    // 1. 활성 회원 목록 조회 (lesson_day 포함)
     const { data: members, error: mErr } = await supabaseAdmin
       .from('members')
-      .select('id, name, department, phone, employee_no, is_active')
+      .select('id, name, department, phone, employee_no, is_active, lesson_day')
       .eq('is_active', true)
       .order('name');
 
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     // 3. 해당 날짜 배정 데이터 조회
     const { data: lessons, error: lErr } = await supabaseAdmin
       .from('lessons')
-      .select('id, member_id, time_slot_id, is_completed, members(id, name, department, phone, employee_no)')
+      .select('id, member_id, time_slot_id, is_completed, members(id, name, department, phone, employee_no, lesson_day)')
       .eq('lesson_date', date)
       .order('id');
 
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
 
     const assignedMemberIdSet = new Set((lessons ?? []).map((l) => l.member_id));
 
-    // 배정 가능한 회원 목록 생성 (동명이인 처리 포함)
+    // 배정 가능한 회원 목록 생성 (동명이인 처리 & lesson_day 포함)
     const eligibleMembers = allActiveMembers.map((m) => {
       const sameNames = nameMap.get(m.name) || [];
       const dispName = buildDisplayName(m, sameNames);
@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
         department: m.department,
         phone: m.phone,
         employee_no: m.employee_no,
+        lesson_day: (m.lesson_day || 'TUE') as 'TUE' | 'THU' | 'BOTH',
         alreadyAssignedToday: assignedMemberIdSet.has(m.id),
       };
     });
@@ -104,7 +105,14 @@ export async function GET(req: NextRequest) {
         end_time: slot.end_time,
         capacity: slot.capacity,
         assigned: slotLessons.map((l) => {
-          const mem = l.members as unknown as { id: number; name: string; department: string | null; phone: string | null; employee_no: string | null };
+          const mem = l.members as unknown as {
+            id: number;
+            name: string;
+            department: string | null;
+            phone: string | null;
+            employee_no: string | null;
+            lesson_day: string | null;
+          };
           const sameNames = nameMap.get(mem?.name || '') || [];
           const dispName = mem ? buildDisplayName(mem, sameNames) : '알 수 없음';
 
@@ -114,6 +122,7 @@ export async function GET(req: NextRequest) {
             name: dispName,
             department: mem?.department ?? null,
             phone: mem?.phone ?? null,
+            lesson_day: (mem?.lesson_day || 'TUE') as 'TUE' | 'THU' | 'BOTH',
             isCompleted: !!l.is_completed,
           };
         }),

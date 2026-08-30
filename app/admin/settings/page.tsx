@@ -3,12 +3,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminDrawer from '@/components/AdminDrawer';
 
+type LessonDay = 'TUE' | 'THU' | 'BOTH';
+
 type Member = {
   id: number;
   name: string;
   department: string | null;
   phone: string | null;
   employee_no: string | null;
+  lesson_day: LessonDay;
   is_active: boolean;
 };
 
@@ -22,7 +25,6 @@ type TimeSlot = {
 
 const DOW_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
-// 🎯 화면 표시용 전화번호 하이픈 헬퍼 함수 (DB 01012345678 -> 화면 010-1234-5678)
 function displayPhone(phoneStr: string | null | undefined): string {
   if (!phoneStr) return '-';
   const clean = phoneStr.replace(/[^0-9]/g, '');
@@ -32,13 +34,18 @@ function displayPhone(phoneStr: string | null | undefined): string {
   return phoneStr;
 }
 
+function getLessonDayBadge(day: LessonDay | undefined) {
+  if (day === 'THU') return { label: '목요일', bg: 'bg-[#8F3A24]/10 text-[#8F3A24]' };
+  if (day === 'BOTH') return { label: '화/목', bg: 'bg-[#1F6F63]/10 text-[#1F6F63]' };
+  return { label: '화요일', bg: 'bg-[#1C2B33]/10 text-[#1C2B33]' };
+}
+
 export default function AdminSettingsPage() {
   const [activeTab, setActiveTab] = useState<'members' | 'slots'>('members');
   const [members, setMembers] = useState<Member[]>([]);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 1초 플로팅 토스트
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = useCallback((msg: string) => {
@@ -47,15 +54,44 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     if (!toastMessage) return;
-    const timer = setTimeout(() => {
-      setToastMessage('');
-    }, 1000);
+    const timer = setTimeout(() => setToastMessage(''), 1000);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // 신규 등록 폼
-  const [newMember, setNewMember] = useState({ name: '', employee_no: '', department: '', phone: '' });
-  const [newSlot, setNewSlot] = useState({ day_of_week: 2, start_time: '10:00', end_time: '10:30', capacity: 2 });
+  // 신규 등록 폼 상태
+  const [newMember, setNewMember] = useState<{
+    name: string;
+    employee_no: string;
+    department: string;
+    phone: string;
+    lesson_day: LessonDay;
+  }>({
+    name: '',
+    employee_no: '',
+    department: '',
+    phone: '',
+    lesson_day: 'TUE',
+  });
+
+  const [newSlot, setNewSlot] = useState({
+    day_of_week: 2,
+    start_time: '10:00',
+    end_time: '10:30',
+    capacity: 2,
+  });
+
+  // 회원 수정 모달 상태
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<{
+    id: number;
+    name: string;
+    employee_no: string;
+    department: string;
+    phone: string;
+    lesson_day: LessonDay;
+    is_active: boolean;
+  } | null>(null);
+  const [submittingEdit, setSubmittingEdit] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -101,7 +137,7 @@ export default function AdminSettingsPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setNewMember({ name: '', employee_no: '', department: '', phone: '' });
+        setNewMember({ name: '', employee_no: '', department: '', phone: '', lesson_day: 'TUE' });
         loadData();
         showToast('수강생이 등록되었습니다.');
       } else {
@@ -109,6 +145,52 @@ export default function AdminSettingsPage() {
       }
     } catch {
       showToast('네트워크 오류');
+    }
+  };
+
+  // 수정 모달 열기
+  const openEditModal = (m: Member) => {
+    setEditingMember({
+      id: m.id,
+      name: m.name,
+      employee_no: m.employee_no ?? '',
+      department: m.department ?? '',
+      phone: m.phone ?? '',
+      lesson_day: m.lesson_day || 'TUE',
+      is_active: m.is_active,
+    });
+    setEditModalOpen(true);
+  };
+
+  // 회원 정보 수정 제출
+  const handleUpdateMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    if (!editingMember.name.trim() || !editingMember.employee_no.trim()) {
+      showToast('이름과 사번은 필수 입력 항목입니다.');
+      return;
+    }
+
+    setSubmittingEdit(true);
+    try {
+      const res = await fetch('/api/admin/settings/members', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingMember),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEditModalOpen(false);
+        setEditingMember(null);
+        loadData();
+        showToast('회원 정보가 수정되었습니다.');
+      } else {
+        showToast(data.error || '수정 실패');
+      }
+    } catch {
+      showToast('네트워크 오류');
+    } finally {
+      setSubmittingEdit(false);
     }
   };
 
@@ -224,7 +306,7 @@ export default function AdminSettingsPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl px-5 py-6 sm:px-8">
+      <main className="max-w-5xl px-3 py-6 sm:px-8">
         {loading ? (
           <p className="text-sm text-[#1C2B33]/40">불러오는 중...</p>
         ) : activeTab === 'members' ? (
@@ -235,7 +317,7 @@ export default function AdminSettingsPage() {
               className="rounded-2xl border border-[#1C2B33]/10 bg-white p-4 shadow-[0_1px_2px_rgba(28,43,51,0.04)]"
             >
               <h2 className="mb-3 text-sm font-semibold text-[#1C2B33]">+ 새 수강생 등록</h2>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
                 <input
                   type="text"
                   placeholder="사번 (필수)"
@@ -252,6 +334,17 @@ export default function AdminSettingsPage() {
                   className="rounded-lg border border-[#1C2B33]/15 px-3 py-1.5 text-sm"
                   required
                 />
+                <select
+                  value={newMember.lesson_day}
+                  onChange={(e) =>
+                    setNewMember({ ...newMember, lesson_day: e.target.value as LessonDay })
+                  }
+                  className="rounded-lg border border-[#1C2B33]/15 px-3 py-1.5 text-sm bg-white font-medium"
+                >
+                  <option value="TUE">화요일</option>
+                  <option value="THU">목요일</option>
+                  <option value="BOTH">화/목</option>
+                </select>
                 <input
                   type="text"
                   placeholder="부서"
@@ -261,7 +354,7 @@ export default function AdminSettingsPage() {
                 />
                 <input
                   type="tel"
-                  placeholder="전화번호 (숫자 11자리)"
+                  placeholder="전화번호 (11자리)"
                   maxLength={11}
                   value={newMember.phone}
                   onChange={(e) => {
@@ -279,54 +372,90 @@ export default function AdminSettingsPage() {
               </div>
             </form>
 
-            <div className="overflow-hidden rounded-2xl border border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-              <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto rounded-2xl border border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
+              <table className="w-full text-center text-sm">
                 <thead className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/60">
                   <tr>
-                    <th className="py-3 px-4">상태</th>
-                    <th className="py-3 px-4">사번</th>
-                    <th className="py-3 px-4">이름</th>
-                    <th className="py-3 px-4">부서</th>
-                    <th className="py-3 px-4">전화번호</th>
-                    <th className="py-3 px-4 text-right">관리</th>
+                    <th className="py-3 px-3 text-center">상태</th>
+                    <th className="py-3 px-2 text-center">사번</th>
+                    <th className="py-3 px-2 text-center">이름</th>
+                    <th className="py-3 px-3 text-center">요일</th>
+                    <th className="py-3 px-3 text-center">전화번호</th>
+                    <th className="py-3 px-3 text-center">부서</th>
+                    <th className="py-3 px-3 text-center">관리</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1C2B33]/5">
-                  {members.map((m) => (
-                    <tr key={m.id} className={m.is_active ? '' : 'bg-[#1C2B33]/[0.02] opacity-50'}>
-                      <td className="py-2.5 px-4">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleMemberActive(m)}
-                          className={
-                            'rounded-full px-2 py-0.5 text-xs font-semibold ' +
-                            (m.is_active ? 'bg-[#1F6F63]/10 text-[#1F6F63]' : 'bg-[#1C2B33]/10 text-[#1C2B33]/50')
-                          }
-                        >
-                          {m.is_active ? '활성' : '비활성'}
-                        </button>
-                      </td>
-                      <td className="py-2.5 px-4 font-semibold text-[#1C2B33]">{m.employee_no ?? '-'}</td>
-                      <td className="py-2.5 px-4 font-medium">{m.name}</td>
-                      <td className="py-2.5 px-4 text-[#1C2B33]/60">{m.department ?? '-'}</td>
-                      {/* 🎯 화면 표시 시 하이픈 포맷팅 적용 */}
-                      <td className="py-2.5 px-4 font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70">
-                        {displayPhone(m.phone)}
-                      </td>
-                      <td className="py-2.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMember(m.id, m.name)}
-                          className="rounded px-2 py-1 text-xs text-[#B5482F] hover:bg-[#B5482F]/10"
-                        >
-                          삭제
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {members.map((m) => {
+                    const badge = getLessonDayBadge(m.lesson_day);
+                    return (
+                      <tr key={m.id} className={m.is_active ? '' : 'bg-[#1C2B33]/[0.02] opacity-50'}>
+                        {/* 1. 상태 */}
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMemberActive(m)}
+                            className={
+                              'rounded-full px-2 py-0.5 text-xs font-semibold ' +
+                              (m.is_active
+                                ? 'bg-[#1F6F63]/10 text-[#1F6F63]'
+                                : 'bg-[#1C2B33]/10 text-[#1C2B33]/50')
+                            }
+                          >
+                            {m.is_active ? '활성' : '비활성'}
+                          </button>
+                        </td>
+
+                        {/* 2. 사번 (간격 축소) */}
+                        <td className="py-2.5 px-2 text-center font-semibold text-[#1C2B33] whitespace-nowrap">
+                          {m.employee_no ?? '-'}
+                        </td>
+
+                        {/* 3. 이름 (간격 축소) */}
+                        <td className="py-2.5 px-2 text-center font-medium whitespace-nowrap">
+                          {m.name}
+                        </td>
+
+                        {/* 4. 요일 */}
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                          <span className={'rounded-md px-2 py-0.5 text-xs font-bold ' + badge.bg}>
+                            {badge.label}
+                          </span>
+                        </td>
+
+                        {/* 5. 전화번호 */}
+                        <td className="py-2.5 px-3 text-center font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">
+                          {displayPhone(m.phone)}
+                        </td>
+
+                        {/* 6. 부서 (뒤로 배치) */}
+                        <td className="py-2.5 px-3 text-center text-[#1C2B33]/60 max-w-[140px] truncate">
+                          {m.department ?? '-'}
+                        </td>
+
+                        {/* 7. 관리 */}
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(m)}
+                            className="rounded px-2 py-1 text-xs font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMember(m.id, m.name)}
+                            className="rounded px-2 py-1 text-xs text-[#B5482F] hover:bg-[#B5482F]/10"
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {members.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-sm text-[#1C2B33]/40">
+                      <td colSpan={7} className="py-8 text-center text-sm text-[#1C2B33]/40">
                         등록된 수강생이 없습니다.
                       </td>
                     </tr>
@@ -388,15 +517,15 @@ export default function AdminSettingsPage() {
               </div>
             </form>
 
-            <div className="overflow-hidden rounded-2xl border border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-              <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto rounded-2xl border border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
+              <table className="w-full text-center text-sm">
                 <thead className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/60">
                   <tr>
-                    <th className="py-3 px-4">요일</th>
-                    <th className="py-3 px-4">시작 시간</th>
-                    <th className="py-3 px-4">종료 시간</th>
-                    <th className="py-3 px-4">정원</th>
-                    <th className="py-3 px-4 text-right">관리</th>
+                    <th className="py-3 px-4 text-center">요일</th>
+                    <th className="py-3 px-4 text-center">시작 시간</th>
+                    <th className="py-3 px-4 text-center">종료 시간</th>
+                    <th className="py-3 px-4 text-center">정원</th>
+                    <th className="py-3 px-4 text-center">관리</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1C2B33]/5">
@@ -412,7 +541,7 @@ export default function AdminSettingsPage() {
                         {s.end_time.slice(0, 5)}
                       </td>
                       <td className="py-2.5 px-4 text-[#1C2B33]/70">{s.capacity}명</td>
-                      <td className="py-2.5 px-4 text-right">
+                      <td className="py-2.5 px-4 text-center">
                         <button
                           type="button"
                           onClick={() => handleDeleteSlot(s.id)}
@@ -437,7 +566,140 @@ export default function AdminSettingsPage() {
         )}
       </main>
 
-      {/* 1초 하단 플로팅 토스트 배너 */}
+      {/* 회원 수정 팝업 모달 */}
+      {editModalOpen && editingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <h3 className="font-[family-name:var(--font-display)] text-lg font-bold text-[#1C2B33]">
+              회원 정보 수정
+            </h3>
+
+            <form onSubmit={handleUpdateMember} className="mt-4 space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#1C2B33]/70">
+                    사번 <span className="text-[#B5482F]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingMember.employee_no}
+                    onChange={(e) =>
+                      setEditingMember({ ...editingMember, employee_no: e.target.value })
+                    }
+                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#1C2B33]/70">
+                    이름 <span className="text-[#B5482F]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingMember.name}
+                    onChange={(e) =>
+                      setEditingMember({ ...editingMember, name: e.target.value })
+                    }
+                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#1C2B33]/70">
+                  레슨 요일 <span className="text-[#B5482F]">*</span>
+                </label>
+                <div className="mt-1.5 grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { id: 'TUE', label: '화요일' },
+                      { id: 'THU', label: '목요일' },
+                      { id: 'BOTH', label: '화/목' },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() =>
+                        setEditingMember({ ...editingMember, lesson_day: item.id })
+                      }
+                      className={
+                        'h-9 rounded-xl border text-xs font-bold transition-all ' +
+                        (editingMember.lesson_day === item.id
+                          ? 'border-[#1C2B33] bg-[#1C2B33] text-white shadow-xs'
+                          : 'border-[#1C2B33]/15 bg-[#FAFAF7] text-[#1C2B33]/60 hover:bg-[#1C2B33]/5')
+                      }
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#1C2B33]/70">부서</label>
+                  <input
+                    type="text"
+                    value={editingMember.department}
+                    onChange={(e) =>
+                      setEditingMember({ ...editingMember, department: e.target.value })
+                    }
+                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#1C2B33]/70">전화번호</label>
+                  <input
+                    type="tel"
+                    maxLength={11}
+                    value={editingMember.phone}
+                    onChange={(e) => {
+                      const onlyNums = e.target.value.replace(/[^0-9]/g, '');
+                      setEditingMember({ ...editingMember, phone: onlyNums });
+                    }}
+                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="modalActiveCheck"
+                  checked={editingMember.is_active}
+                  onChange={(e) =>
+                    setEditingMember({ ...editingMember, is_active: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded accent-[#1C2B33]"
+                />
+                <label htmlFor="modalActiveCheck" className="text-xs font-semibold text-[#1C2B33]/80">
+                  활성 회원 (시간표 배정 대상 포함)
+                </label>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="rounded-full px-4 py-2 text-xs font-semibold text-[#1C2B33]/60 hover:bg-[#1C2B33]/5"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEdit}
+                  className="rounded-full bg-[#1C2B33] px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#1C2B33]/90 disabled:opacity-50"
+                >
+                  {submittingEdit ? '저장 중...' : '수정 완료'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>

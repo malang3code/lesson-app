@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// 수강생 목록 조회 (GET)
+// 1. 수강생 목록 조회 (GET)
 export async function GET() {
   try {
     const { data, error } = await supabaseAdmin
       .from('members')
       .select('*')
+      .order('is_active', { ascending: false })
       .order('name');
 
     if (error) throw error;
@@ -17,11 +18,11 @@ export async function GET() {
   }
 }
 
-// 수강생 등록 (POST)
+// 2. 수강생 등록 (POST)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, department, phone, employee_no } = body;
+    const { name, department, phone, employee_no, lesson_day } = body;
 
     // 이름 필수값 검증
     if (!name?.trim()) {
@@ -67,6 +68,9 @@ export async function POST(req: NextRequest) {
       cleanPhone = pureDigits;
     }
 
+    // 🎯 레슨 요일 검증 (기본값 TUE)
+    const validLessonDay = ['TUE', 'THU', 'BOTH'].includes(lesson_day) ? lesson_day : 'TUE';
+
     const { data, error } = await supabaseAdmin
       .from('members')
       .insert({
@@ -74,6 +78,7 @@ export async function POST(req: NextRequest) {
         employee_no: cleanEmpNo,
         department: department?.trim() || null,
         phone: cleanPhone,
+        lesson_day: validLessonDay,
         is_active: true,
       })
       .select()
@@ -93,11 +98,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 수강생 상태/정보 수정 (PATCH)
+// 3. 수강생 상태/정보 수정 (PATCH)
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, is_active, name, department, phone, employee_no } = body;
+    const { id, is_active, name, department, phone, employee_no, lesson_day } = body;
 
     if (!id) {
       return NextResponse.json({ error: '회원 ID가 필요합니다.' }, { status: 400 });
@@ -105,6 +110,7 @@ export async function PATCH(req: NextRequest) {
 
     const updatePayload: Record<string, unknown> = {};
     if (typeof is_active === 'boolean') updatePayload.is_active = is_active;
+    
     if (name !== undefined) {
       if (!name.trim()) return NextResponse.json({ error: '이름은 필수 항목입니다.' }, { status: 400 });
       updatePayload.name = name.trim();
@@ -158,6 +164,13 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    // 🎯 레슨 요일 수정 반영
+    if (lesson_day !== undefined) {
+      if (['TUE', 'THU', 'BOTH'].includes(lesson_day)) {
+        updatePayload.lesson_day = lesson_day;
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('members')
       .update(updatePayload)
@@ -179,7 +192,7 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// 수강생 삭제 (DELETE)
+// 4. 수강생 삭제 (DELETE)
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
