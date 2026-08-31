@@ -467,7 +467,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 🎯 슬롯 카드 컨테이너 (드롭 영역) */}
+                      {/* 🎯 슬롯 카드 컨테이너 (정밀 Drop 영역) */}
                       <div
                         data-slot-id={slot.id}
                         onDragOver={
@@ -481,13 +481,18 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         }
                         onDragLeave={
                           isAdmin && !props.swapModeActive
-                            ? () => props.onDragLeaveSlot?.(slot.id)
+                            ? (e) => {
+                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                  props.onDragLeaveSlot?.(slot.id);
+                                }
+                              }
                             : undefined
                         }
                         onDrop={
                           isAdmin && !props.swapModeActive
                             ? (e) => {
                                 e.preventDefault();
+                                e.stopPropagation();
                                 props.onDropToSlot?.(slot.id);
                               }
                             : undefined
@@ -503,7 +508,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                       >
                         {/* ⚠️ 3명 초과 경고 뱃지 */}
                         {isOver && (
-                          <div className="absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-2xs whitespace-nowrap">
+                          <div className="pointer-events-none absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-2xs whitespace-nowrap">
                             <span>⚠️ 초과</span>
                             <span>({assignedList.length}/{capacity})</span>
                           </div>
@@ -530,7 +535,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                 onDragEnd={isAdmin && !props.swapModeActive ? props.onDragEnd : undefined}
                                 className={
                                   'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
-                                  (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing hover:border-[#1C2B33]/30 ' : '') +
+                                  (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing hover:border-[#1C2B33]/40 ' : '') +
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
                                     : isCompleted
@@ -570,7 +575,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                 </span>
 
                                 {isAdmin && props.showDetailInfo && (
-                                  <span className={'whitespace-nowrap text-xs ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
+                                  <span className={'pointer-events-none whitespace-nowrap text-xs ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
                                     {displayPhone(a.phone)} {a.department ?? '-'}
                                   </span>
                                 )}
