@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const MENU_ITEMS = [
+  { href: '/admin/dashboard', label: '대시보드' },
   { href: '/admin/assign', label: '레슨 시간표' },
   { href: '/admin/calendar', label: '레슨일 관리' },
   { href: '/admin/settings', label: '정보 관리' },
