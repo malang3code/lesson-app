@@ -7,12 +7,6 @@ import LessonSwapModal, { SwapTargetInfo } from '@/components/LessonSwapModal';
 import { useScheduleSaveBar } from '@/hooks/useScheduleSaveBar';
 import { toPng } from 'html-to-image';
 
-type DragItem = {
-  lessonId: number | string;
-  sourceSlotId: number;
-  memberName: string;
-};
-
 export default function AdminAssignPage() {
   const [rawDates, setRawDates] = useState<string[]>([]);
   const [showPast, setShowPast] = useState(false);
@@ -42,11 +36,6 @@ export default function AdminAssignPage() {
 
   const captureRef = useRef<HTMLDivElement>(null);
 
-  // 🎯 마우스 드래그 앤 드롭 상태 관리 (Ref + State로 완벽 보존)
-  const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
-  const draggedItemRef = useRef<DragItem | null>(null);
-  const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
-
   const [copyPanelOpen, setCopyPanelOpen] = useState(false);
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
@@ -75,7 +64,7 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 저장 바 훅 연결 (setIsDirty 제거하여 타입 에러 해결)
+  // 🎯 공통 저장 바 훅 연결
   const {
     isDirty,
     showSaveBar,
@@ -269,40 +258,40 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 🎯 핵심: 드래그 앤 드롭 이동 함수
-  const moveMemberToSlot = useCallback((lessonId: number | string, srcSlotId: number, destSlotId: number) => {
-    if (srcSlotId === destSlotId) return;
+  // 🎯 브라우저 네이티브 드래그 앤 드롭 이동 함수
+  const handleMoveMemberToSlot = useCallback((lessonId: number | string, srcSlotId: number, destSlotId: number) => {
+    if (Number(srcSlotId) === Number(destSlotId)) return;
 
-    setSlots((prev) => {
+    setSlots((prevSlots) => {
       let movingItem: AssignedItem | null = null;
 
-      // 1. 출발 시간대에서 수강생 추출
-      const updated = prev.map((s) => {
-        if (s.id === srcSlotId) {
+      // 1. 출발지에서 수강생 분리
+      const updatedSlots = prevSlots.map((slot) => {
+        if (slot.id === Number(srcSlotId)) {
           const remaining: AssignedItem[] = [];
-          (s.assigned || []).forEach((a) => {
-            if (String(a.lessonId) === String(lessonId)) {
-              movingItem = a;
+          (slot.assigned || []).forEach((item) => {
+            if (String(item.lessonId) === String(lessonId)) {
+              movingItem = item;
             } else {
-              remaining.push(a);
+              remaining.push(item);
             }
           });
-          return { ...s, assigned: remaining };
+          return { ...slot, assigned: remaining };
         }
-        return s;
+        return slot;
       });
 
-      if (!movingItem) return prev;
+      if (!movingItem) return prevSlots;
 
-      // 2. 도착 시간대에 수강생 추가
-      return updated.map((s) => {
-        if (s.id === destSlotId) {
+      // 2. 목적지에 수강생 추가
+      return updatedSlots.map((slot) => {
+        if (slot.id === Number(destSlotId)) {
           return {
-            ...s,
-            assigned: [...(s.assigned || []), movingItem!],
+            ...slot,
+            assigned: [...(slot.assigned || []), movingItem!],
           };
         }
-        return s;
+        return slot;
       });
     });
   }, []);
@@ -473,34 +462,7 @@ export default function AdminAssignPage() {
         onAssign={handleAssign}
         onRemove={handleRemove}
         onToggleCompleted={handleToggleCompleted}
-        dragOverSlotId={dragOverSlotId}
-        onDragStart={(e, a, slotId) => {
-          const itemPayload: DragItem = { lessonId: a.lessonId, sourceSlotId: slotId, memberName: a.name };
-          draggedItemRef.current = itemPayload;
-          setDraggedItem(itemPayload);
-          e.dataTransfer.setData('text/plain', JSON.stringify(itemPayload));
-          e.dataTransfer.effectAllowed = 'move';
-        }}
-        onDragEnd={() => {
-          draggedItemRef.current = null;
-          setDraggedItem(null);
-          setDragOverSlotId(null);
-        }}
-        onDragOverSlot={(slotId) => {
-          if (dragOverSlotId !== slotId) setDragOverSlotId(slotId);
-        }}
-        onDragLeaveSlot={(slotId) => {
-          if (dragOverSlotId === slotId) setDragOverSlotId(null);
-        }}
-        onDropToSlot={(destSlotId) => {
-          const activeItem = draggedItemRef.current || draggedItem;
-          if (activeItem) {
-            moveMemberToSlot(activeItem.lessonId, activeItem.sourceSlotId, destSlotId);
-          }
-          draggedItemRef.current = null;
-          setDraggedItem(null);
-          setDragOverSlotId(null);
-        }}
+        onMoveMemberToSlot={handleMoveMemberToSlot}
         copyPanelOpen={copyPanelOpen}
         onToggleCopyPanel={() => setCopyPanelOpen((v) => !v)}
         copyTargets={copyTargets}
