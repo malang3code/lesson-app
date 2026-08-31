@@ -42,7 +42,7 @@ export default function AdminAssignPage() {
 
   const captureRef = useRef<HTMLDivElement>(null);
 
-  // 🎯 드래그 앤 드롭 상태 (Ref와 State 동시 유지로 유실 방지)
+  // 🎯 마우스 드래그 앤 드롭 상태 관리 (Ref + State로 완벽 보존)
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const draggedItemRef = useRef<DragItem | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
@@ -75,10 +75,9 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 저장 바 훅 연결
+  // 🎯 공통 저장 바 훅 연결 (setIsDirty 제거하여 타입 에러 해결)
   const {
     isDirty,
-    setIsDirty,
     showSaveBar,
     saving,
     toastMessage,
@@ -248,7 +247,6 @@ export default function AdminAssignPage() {
             }
       )
     );
-    setIsDirty?.(true);
   };
 
   const handleRemove = (lessonId: number | string) => {
@@ -258,7 +256,6 @@ export default function AdminAssignPage() {
         assigned: (s.assigned || []).filter((a) => String(a.lessonId) !== String(lessonId)),
       }))
     );
-    setIsDirty?.(true);
   };
 
   const handleToggleCompleted = (lessonId: number | string) => {
@@ -270,17 +267,16 @@ export default function AdminAssignPage() {
         ),
       }))
     );
-    setIsDirty?.(true);
   };
 
-  // 🎯 완벽한 드래그 앤 드롭 이동 함수
+  // 🎯 핵심: 드래그 앤 드롭 이동 함수
   const moveMemberToSlot = useCallback((lessonId: number | string, srcSlotId: number, destSlotId: number) => {
     if (srcSlotId === destSlotId) return;
 
     setSlots((prev) => {
       let movingItem: AssignedItem | null = null;
 
-      // 1. 소스 슬롯에서 아이템 추출
+      // 1. 출발 시간대에서 수강생 추출
       const updated = prev.map((s) => {
         if (s.id === srcSlotId) {
           const remaining: AssignedItem[] = [];
@@ -298,7 +294,7 @@ export default function AdminAssignPage() {
 
       if (!movingItem) return prev;
 
-      // 2. 대상 슬롯에 아이템 추가
+      // 2. 도착 시간대에 수강생 추가
       return updated.map((s) => {
         if (s.id === destSlotId) {
           return {
@@ -309,9 +305,7 @@ export default function AdminAssignPage() {
         return s;
       });
     });
-
-    setIsDirty?.(true);
-  }, [setIsDirty]);
+  }, []);
 
   const handleInitiateSwap = (slot: Slot, item: AssignedItem) => {
     if (!selectedDate) return;
