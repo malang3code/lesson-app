@@ -113,14 +113,14 @@ interface LessonScheduleViewProps {
   onAssign?: (slotId: number, memberId: string) => void;
   onRemove?: (lessonId: number | string) => void;
   onToggleCompleted?: (lessonId: number | string) => void;
-  // PC 마우스 드래그 앤 드롭 (초기 배정 시 관리자 전용)
+  // PC 마우스 드래그 앤 드롭
   dragOverSlotId?: number | null;
   onDragStart?: (e: React.DragEvent, item: AssignedItem, slotId: number) => void;
   onDragEnd?: () => void;
   onDragOverSlot?: (slotId: number) => void;
   onDragLeaveSlot?: (slotId: number) => void;
   onDropToSlot?: (slotId: number) => void;
-  // 빌드 호환용 옵셔널 props (화면에는 미사용)
+  // 빌드 호환용 옵셔널 props
   onTouchStart?: (e: React.TouchEvent, item: AssignedItem, slotId: number) => void;
   touchPos?: { x: number; y: number } | null;
   draggedItem?: { memberName: string } | null;
@@ -471,12 +471,31 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 슬롯 카드 컨테이너 */}
+                      {/* 🎯 슬롯 카드 컨테이너 (HTML5 드롭 영역 완벽 지원) */}
                       <div
                         data-slot-id={slot.id}
-                        onDragOver={isAdmin ? (e) => { e.preventDefault(); props.onDragOverSlot?.(slot.id); } : undefined}
-                        onDragLeave={isAdmin ? () => props.onDragLeaveSlot?.(slot.id) : undefined}
-                        onDrop={isAdmin ? (e) => { e.preventDefault(); props.onDropToSlot?.(slot.id); } : undefined}
+                        onDragOver={
+                          isAdmin && !props.swapModeActive
+                            ? (e) => {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = 'move';
+                                props.onDragOverSlot?.(slot.id);
+                              }
+                            : undefined
+                        }
+                        onDragLeave={
+                          isAdmin && !props.swapModeActive
+                            ? () => props.onDragLeaveSlot?.(slot.id)
+                            : undefined
+                        }
+                        onDrop={
+                          isAdmin && !props.swapModeActive
+                            ? (e) => {
+                                e.preventDefault();
+                                props.onDropToSlot?.(slot.id);
+                              }
+                            : undefined
+                        }
                         className={
                           'relative flex-1 rounded-2xl border px-2.5 py-2 transition-all ' +
                           (isDragOver
@@ -506,11 +525,23 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                               <span
                                 key={a.lessonId}
                                 draggable={isAdmin && !props.swapModeActive}
-                                onDragStart={isAdmin && !props.swapModeActive ? (e) => props.onDragStart?.(e, a, slot.id) : undefined}
+                                onDragStart={
+                                  isAdmin && !props.swapModeActive
+                                    ? (e) => props.onDragStart?.(e, a, slot.id)
+                                    : undefined
+                                }
                                 onDragEnd={isAdmin && !props.swapModeActive ? props.onDragEnd : undefined}
+                                onClick={(e) => {
+                                  // 뱃지 전체 클릭 시 동작 (스왑 모드면 스왑 실행, 아니면 출석 체크)
+                                  if (props.swapModeActive) {
+                                    props.onInitiateSwap?.(slot, a);
+                                  } else {
+                                    props.onToggleCompleted?.(a.lessonId);
+                                  }
+                                }}
                                 className={
-                                  'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
-                                  (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing ' : '') +
+                                  'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none cursor-pointer ' +
+                                  (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing hover:border-[#1C2B33]/30 ' : '') +
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
                                     : isCompleted
@@ -522,18 +553,10 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                     : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                                 }
                               >
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (props.swapModeActive) {
-                                      props.onInitiateSwap?.(slot, a);
-                                    } else {
-                                      props.onToggleCompleted?.(a.lessonId);
-                                    }
-                                  }}
+                                {/* 🎯 드래그를 방해하던 내부 <button> 태그 제거하고 span으로 렌더링 */}
+                                <span
                                   className={
-                                    'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors ' +
+                                    'whitespace-nowrap font-medium text-sm pointer-events-none transition-colors ' +
                                     (props.swapModeActive
                                       ? 'text-[#1F6F63] font-bold'
                                       : isCompleted
@@ -544,14 +567,13 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                       ? 'text-[#A06C18]'
                                       : 'text-[#1C2B33]')
                                   }
-                                  title={props.swapModeActive ? '클릭하여 일정 변경' : '클릭하여 출석 체크/취소'}
                                 >
                                   {props.swapModeActive && '🔄 '}
                                   {a.name}{isCrossDay ? `(${memDay === 'TUE' ? '화' : '목'})` : ''}
-                                </button>
+                                </span>
 
                                 {isAdmin && props.showDetailInfo && (
-                                  <span className={'whitespace-nowrap text-xs ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
+                                  <span className={'whitespace-nowrap text-xs pointer-events-none ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
                                     {displayPhone(a.phone)} {a.department ?? '-'}
                                   </span>
                                 )}
