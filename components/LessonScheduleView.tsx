@@ -170,7 +170,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
 
   return (
     <div className="min-h-dvh bg-[#FAFAF7] pb-24 text-[#1C2B33] overscroll-y-none">
-      {/* 🎯 상단 헤더 (너비 max-w-[580px]로 확장) */}
+      {/* 🎯 상단 헤더 */}
       <header className="px-4 pt-4 pb-1 sm:px-6 max-w-[580px]">
         {/* 1행: 타이틀 + 이미지 공유 */}
         <div className="flex items-center gap-3">
@@ -190,7 +190,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
           </button>
         </div>
 
-        {/* 2행: 컨트롤 버튼 바 */}
+        {/* 2행: 컨트롤 버튼 바 (변경 버튼은 날짜 헤더로 이동) */}
         <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
           <button
             type="button"
@@ -221,20 +221,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             className="flex h-7 shrink-0 items-center gap-0.5 rounded-full border border-[#1C2B33]/15 bg-white px-2.5 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
           >
             다음 ▶
-          </button>
-
-          <button
-            type="button"
-            onClick={props.onToggleSwapMode}
-            className={
-              'flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition-all ' +
-              (props.swapModeActive
-                ? 'bg-[#1F6F63] text-white shadow-2xs ring-2 ring-[#1F6F63]/30'
-                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/80 hover:bg-[#1C2B33]/5')
-            }
-          >
-            <span>🔄</span>
-            <span>{props.swapModeActive ? '변경 취소' : '변경'}</span>
           </button>
 
           {isAdmin && props.selectedDate && hasAssignments && (
@@ -275,13 +261,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </>
           )}
         </div>
-
-        {/* 변경 모드 안내 배너 */}
-        {props.swapModeActive && (
-          <div className="mt-2.5 rounded-xl bg-[#E8F3EE] p-2 text-xs font-medium text-[#1F6F63] animate-in fade-in duration-150">
-            💡 변경할 수강생 이름을 클릭하면 다른 날짜/시간대 선택 창이 열립니다.
-          </div>
-        )}
 
         {/* 캘린더 드롭다운 */}
         {props.calendarOpen && (
@@ -398,13 +377,13 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
         )}
       </header>
 
-      {/* 🎯 본문 시간표 영역 (max-w-[580px]로 넉넉하게 확장) */}
+      {/* 🎯 본문 시간표 영역 */}
       <main className="px-4 pt-1.5 pb-4 sm:px-6 w-full max-w-[580px]">
         <div ref={props.captureRef} className="relative w-full bg-[#FAFAF7] p-2 sm:p-3 rounded-2xl">
-          {/* 날짜 헤더 & 출석 현황 */}
+          {/* 🎯 날짜 헤더 & 출석 현황 & [🔄 변경] 버튼 위치 */}
           {props.selectedDate && (
-            <div className="mb-3 pb-2 border-b-2 border-[#1C2B33]/15 flex items-baseline justify-between">
-              <div className="flex items-baseline gap-2">
+            <div className="mb-3 pb-2 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
+              <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
                 <span className="font-[family-name:var(--font-display)] text-lg font-bold text-[#1C2B33] sm:text-xl">
                   {props.selectedDate} ({dowLabel(props.selectedDate)})
                 </span>
@@ -417,6 +396,28 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   )}
                 </span>
               </div>
+
+              {/* 🎯 레슨 시간표 우측 변경 버튼 */}
+              <button
+                type="button"
+                onClick={props.onToggleSwapMode}
+                className={
+                  'flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition-all ' +
+                  (props.swapModeActive
+                    ? 'bg-[#1F6F63] text-white shadow-2xs ring-2 ring-[#1F6F63]/30'
+                    : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/80 hover:bg-[#1C2B33]/5')
+                }
+              >
+                <span>🔄</span>
+                <span>{props.swapModeActive ? '변경 취소' : '변경'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* 변경 모드 안내 배너 */}
+          {props.swapModeActive && (
+            <div className="mb-3 rounded-xl bg-[#E8F3EE] p-2 text-xs font-medium text-[#1F6F63] animate-in fade-in duration-150">
+              💡 변경할 수강생 이름을 클릭하면 다른 날짜/시간대 선택 창이 열립니다.
             </div>
           )}
 
@@ -632,16 +633,15 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 🎯 하단 변경 내역(히스토리) - 한 줄로 깔끔하게 렌더링 */}
+          {/* 🎯 하단 변경 내역(히스토리) - 가로 스크롤 & 원복 버튼 겹침 완벽 방어 */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
             <div className="mt-4 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-2xs">
               <div className="mb-2 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1.5">
                 <span className="font-[family-name:var(--font-display)] text-xs font-bold text-[#1C2B33]">
                   📋 {props.selectedDate} 레슨 변경 이력
                 </span>
-                
               </div>
-              <div className="space-y-1.5 overflow-x-auto no-scrollbar">
+              <div className="space-y-1.5">
                 {props.swapHistories.map((h) => {
                   const isSourceCurrent = h.source_date === props.selectedDate;
                   const leftDate = isSourceCurrent ? h.source_date : h.target_date;
@@ -657,9 +657,10 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   return (
                     <div
                       key={h.id}
-                      className="flex items-center justify-between gap-2 rounded-xl bg-[#FAFAF7] px-2.5 py-1.5 text-xs text-[#1C2B33] border border-[#1C2B33]/5 whitespace-nowrap min-w-0"
+                      className="flex items-center justify-between gap-2 rounded-xl bg-[#FAFAF7] px-2.5 py-1.5 text-xs text-[#1C2B33] border border-[#1C2B33]/5"
                     >
-                      <div className="flex items-center gap-1.5 font-medium text-xs min-w-0">
+                      {/* 텍스트 영역: 모바일에서도 잘리지 않도록 overflow-x-auto & no-scrollbar 적용 */}
+                      <div className="flex items-center gap-1.5 font-medium text-xs overflow-x-auto no-scrollbar whitespace-nowrap min-w-0 pr-1">
                         {/* 이벤트 발생 일시 뱃지 */}
                         {eventTimeStr && (
                           <span className="font-[family-name:var(--font-mono-club)] text-[10px] font-semibold text-[#1C2B33]/50 bg-[#1C2B33]/5 px-1.5 py-0.5 rounded-md shrink-0">
@@ -679,6 +680,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         <span className="font-bold text-[#1C2B33] shrink-0">{rightName}</span>
                       </div>
 
+                      {/* 🎯 원복 버튼: 절대 축소되거나 덮이지 않도록 shrink-0 설정 */}
                       <button
                         type="button"
                         onClick={() => props.onRevertSwapHistory?.(h.id)}
