@@ -42,10 +42,9 @@ export default function AdminAssignPage() {
 
   const captureRef = useRef<HTMLDivElement>(null);
 
+  // 🎯 마우스 드래그 앤 드롭 상태 (초기 배정/재배치용)
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
-  const [touchPos, setTouchPos] = useState<{ x: number; y: number } | null>(null);
-  const isTouchDraggingRef = useRef(false);
 
   const [copyPanelOpen, setCopyPanelOpen] = useState(false);
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
@@ -269,6 +268,7 @@ export default function AdminAssignPage() {
     );
   };
 
+  // 드래그 앤 드롭 이동 함수 (스왑 히스토리 기록 없음)
   const moveMemberToSlot = (lessonId: number | string, src: number, dest: number) => {
     if (src === dest) return;
     const moving = slots.flatMap((s) => s.assigned || []).find((a) => a.lessonId === lessonId);
@@ -451,8 +451,9 @@ export default function AdminAssignPage() {
         onToggleCompleted={handleToggleCompleted}
         dragOverSlotId={dragOverSlotId}
         onDragStart={(e, a, slotId) => {
-          setDraggedItem({ lessonId: a.lessonId, sourceSlotId: slotId, memberName: a.name });
+          e.dataTransfer.setData('text/plain', String(a.lessonId));
           e.dataTransfer.effectAllowed = 'move';
+          setDraggedItem({ lessonId: a.lessonId, sourceSlotId: slotId, memberName: a.name });
         }}
         onDragEnd={() => { setDraggedItem(null); setDragOverSlotId(null); }}
         onDragOverSlot={(slotId) => dragOverSlotId !== slotId && setDragOverSlotId(slotId)}
@@ -461,12 +462,6 @@ export default function AdminAssignPage() {
           if (draggedItem) moveMemberToSlot(draggedItem.lessonId, draggedItem.sourceSlotId, slotId);
           setDraggedItem(null);
           setDragOverSlotId(null);
-        }}
-        onTouchStart={(e, a, slotId) => {
-          const touch = e.touches[0];
-          isTouchDraggingRef.current = true;
-          setDraggedItem({ lessonId: a.lessonId, sourceSlotId: slotId, memberName: a.name });
-          setTouchPos({ x: touch.clientX, y: touch.clientY });
         }}
         copyPanelOpen={copyPanelOpen}
         onToggleCopyPanel={() => setCopyPanelOpen((v) => !v)}
@@ -483,8 +478,6 @@ export default function AdminAssignPage() {
         showSaveBar={showSaveBar}
         onRevert={handleRevert}
         onSaveChanges={handleSave}
-        touchPos={touchPos}
-        draggedItem={draggedItem}
         onCloseToast={closeToast}
       />
 
