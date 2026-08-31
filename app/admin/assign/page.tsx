@@ -42,7 +42,7 @@ export default function AdminAssignPage() {
 
   const captureRef = useRef<HTMLDivElement>(null);
 
-  // 🎯 마우스 드래그 앤 드롭 상태 (초기 배정/재배치용)
+  // 🎯 드래그 앤 드롭 상태
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dragOverSlotId, setDragOverSlotId] = useState<number | null>(null);
 
@@ -74,7 +74,7 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 훅 연결
+  // 🎯 공통 저장 바 훅 연결
   const {
     isDirty,
     showSaveBar,
@@ -252,7 +252,7 @@ export default function AdminAssignPage() {
     setSlots((prev) =>
       prev.map((s) => ({
         ...s,
-        assigned: (s.assigned || []).filter((a) => a.lessonId !== lessonId),
+        assigned: (s.assigned || []).filter((a) => String(a.lessonId) !== String(lessonId)),
       }))
     );
   };
@@ -262,24 +262,48 @@ export default function AdminAssignPage() {
       prev.map((s) => ({
         ...s,
         assigned: (s.assigned || []).map((a) =>
-          a.lessonId === lessonId ? { ...a, isCompleted: !a.isCompleted } : a
+          String(a.lessonId) === String(lessonId) ? { ...a, isCompleted: !a.isCompleted } : a
         ),
       }))
     );
   };
 
-  // 드래그 앤 드롭 이동 함수 (스왑 히스토리 기록 없음)
-  const moveMemberToSlot = (lessonId: number | string, src: number, dest: number) => {
-    if (src === dest) return;
-    const moving = slots.flatMap((s) => s.assigned || []).find((a) => a.lessonId === lessonId);
-    if (!moving) return;
-    setSlots((prev) =>
-      prev.map((s) => {
-        if (s.id === src) return { ...s, assigned: (s.assigned || []).filter((a) => a.lessonId !== lessonId) };
-        if (s.id === dest) return { ...s, assigned: [...(s.assigned || []), moving] };
+  // 🎯 드래그 앤 드롭 이동 함수 (ID 타입 불일치 방어 및 슬롯 이동)
+  const moveMemberToSlot = (lessonId: number | string, srcSlotId: number, destSlotId: number) => {
+    if (srcSlotId === destSlotId) return;
+
+    setSlots((prev) => {
+      let movingItem: AssignedItem | null = null;
+
+      // 1. 소스 슬롯에서 추출
+      const updated = prev.map((s) => {
+        if (s.id === srcSlotId) {
+          const remaining: AssignedItem[] = [];
+          (s.assigned || []).forEach((a) => {
+            if (String(a.lessonId) === String(lessonId)) {
+              movingItem = a;
+            } else {
+              remaining.push(a);
+            }
+          });
+          return { ...s, assigned: remaining };
+        }
         return s;
-      })
-    );
+      });
+
+      if (!movingItem) return prev;
+
+      // 2. 대상 슬롯에 추가
+      return updated.map((s) => {
+        if (s.id === destSlotId) {
+          return {
+            ...s,
+            assigned: [...(s.assigned || []), movingItem!],
+          };
+        }
+        return s;
+      });
+    });
   };
 
   const handleInitiateSwap = (slot: Slot, item: AssignedItem) => {
@@ -343,7 +367,6 @@ export default function AdminAssignPage() {
     showToast(`${swapSourceInfo.memberName} ⟷ ${target.memberName} 변경 준비 완료 (하단 저장 클릭)`);
   };
 
-  // 🎯 이력 원복 핸들러
   const handleRevertSwapHistory = async (historyId: number) => {
     if (!confirm('이 변경 건을 원래 일정으로 되돌리시겠습니까?')) return;
     try {
@@ -451,15 +474,26 @@ export default function AdminAssignPage() {
         onToggleCompleted={handleToggleCompleted}
         dragOverSlotId={dragOverSlotId}
         onDragStart={(e, a, slotId) => {
-          e.dataTransfer.setData('text/plain', String(a.lessonId));
+          e.stopPropagation();
+          const itemPayload: DragItem = { lessonId: a.lessonId, sourceSlotId: slotId, memberName: a.name };
+          e.dataTransfer.setData('text/plain', JSON.stringify(itemPayload));
           e.dataTransfer.effectAllowed = 'move';
-          setDraggedItem({ lessonId: a.lessonId, sourceSlotId: slotId, memberName: a.name });
+          setDraggedItem(itemPayload);
         }}
-        onDragEnd={() => { setDraggedItem(null); setDragOverSlotId(null); }}
-        onDragOverSlot={(slotId) => dragOverSlotId !== slotId && setDragOverSlotId(slotId)}
-        onDragLeaveSlot={(slotId) => dragOverSlotId === slotId && setDragOverSlotId(null)}
+        onDragEnd={() => {
+          setDraggedItem(null);
+          setDragOverSlotId(null);
+        }}
+        onDragOverSlot={(slotId) => {
+          if (dragOverSlotId !== slotId) setDragOverSlotId(slotId);
+        }}
+        onDragLeaveSlot={(slotId) => {
+          if (dragOverSlotId === slotId) setDragOverSlotId(null);
+        }}
         onDropToSlot={(slotId) => {
-          if (draggedItem) moveMemberToSlot(draggedItem.lessonId, draggedItem.sourceSlotId, slotId);
+          if (draggedItem) {
+            moveMemberToSlot(draggedItem.lessonId, draggedItem.sourceSlotId, slotId);
+          }
           setDraggedItem(null);
           setDragOverSlotId(null);
         }}

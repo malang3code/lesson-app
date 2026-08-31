@@ -56,7 +56,6 @@ function displayPhone(phoneStr: string | null | undefined): string {
   return phoneStr;
 }
 
-// 이벤트 발생 시각 포맷: "MM/DD HH:mm"
 function formatCreatedAt(utcDateStr: string): string {
   try {
     const d = new Date(utcDateStr);
@@ -97,7 +96,7 @@ interface LessonScheduleViewProps {
   onSelectDate: (d: string) => void;
   currentCalYm: string;
   currentYm: string;
-  // 변경(스왑) 모드 (공통)
+  // 변경(스왑) 모드
   swapModeActive?: boolean;
   onToggleSwapMode?: () => void;
   onInitiateSwap?: (slot: Slot, item: AssignedItem) => void;
@@ -120,11 +119,11 @@ interface LessonScheduleViewProps {
   onDragOverSlot?: (slotId: number) => void;
   onDragLeaveSlot?: (slotId: number) => void;
   onDropToSlot?: (slotId: number) => void;
-  // 빌드 호환용 옵셔널 props
+  // 호환용 props
   onTouchStart?: (e: React.TouchEvent, item: AssignedItem, slotId: number) => void;
   touchPos?: { x: number; y: number } | null;
   draggedItem?: { memberName: string } | null;
-  // 관리자 도구 (복사/비우기)
+  // 관리자 도구
   copyPanelOpen?: boolean;
   onToggleCopyPanel?: () => void;
   copyTargets?: Set<string>;
@@ -133,7 +132,7 @@ interface LessonScheduleViewProps {
   copying?: boolean;
   onRunCopy?: () => void;
   onResetDay?: () => void;
-  // 하단 저장 바 (공통)
+  // 하단 저장 바
   isDirty?: boolean;
   saving?: boolean;
   hasOverCapacity?: boolean;
@@ -155,7 +154,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
     props.slots.flatMap((s) => (s.assigned || []).map((a) => a.memberId))
   );
 
-  // 출석 현황 (X/Y) 집계
   const { completedCount, totalAssignedCount } = useMemo(() => {
     let completed = 0;
     let total = 0;
@@ -172,7 +170,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
     <div className="min-h-dvh bg-[#FAFAF7] pb-24 text-[#1C2B33] overscroll-y-none">
       {/* 🎯 상단 헤더 */}
       <header className="px-4 pt-4 pb-1 sm:px-6 max-w-[580px]">
-        {/* 1행: 타이틀 + 이미지 공유 */}
         <div className="flex items-center gap-3">
           {props.drawer}
           <h1 className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight text-[#1C2B33] sm:text-2xl">
@@ -190,7 +187,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
           </button>
         </div>
 
-        {/* 2행: 컨트롤 버튼 바 */}
+        {/* 컨트롤 버튼 바 */}
         <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
           <button
             type="button"
@@ -397,7 +394,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                 </span>
               </div>
 
-              {/* 공통: 변경 버튼 */}
               <button
                 type="button"
                 onClick={props.onToggleSwapMode}
@@ -471,7 +467,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 🎯 슬롯 카드 컨테이너 (HTML5 드롭 영역 완벽 지원) */}
+                      {/* 🎯 슬롯 카드 컨테이너 (드롭 영역) */}
                       <div
                         data-slot-id={slot.id}
                         onDragOver={
@@ -505,6 +501,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                             : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
                         }
                       >
+                        {/* ⚠️ 3명 초과 경고 뱃지 */}
                         {isOver && (
                           <div className="absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-2xs whitespace-nowrap">
                             <span>⚠️ 초과</span>
@@ -522,7 +519,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                 (currentSelectedDow === 4 && memDay === 'TUE'));
 
                             return (
-                              <span
+                              <div
                                 key={a.lessonId}
                                 draggable={isAdmin && !props.swapModeActive}
                                 onDragStart={
@@ -531,16 +528,8 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                     : undefined
                                 }
                                 onDragEnd={isAdmin && !props.swapModeActive ? props.onDragEnd : undefined}
-                                onClick={(e) => {
-                                  // 뱃지 전체 클릭 시 동작 (스왑 모드면 스왑 실행, 아니면 출석 체크)
-                                  if (props.swapModeActive) {
-                                    props.onInitiateSwap?.(slot, a);
-                                  } else {
-                                    props.onToggleCompleted?.(a.lessonId);
-                                  }
-                                }}
                                 className={
-                                  'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none cursor-pointer ' +
+                                  'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
                                   (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing hover:border-[#1C2B33]/30 ' : '') +
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
@@ -553,10 +542,17 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                     : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                                 }
                               >
-                                {/* 🎯 드래그를 방해하던 내부 <button> 태그 제거하고 span으로 렌더링 */}
                                 <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (props.swapModeActive) {
+                                      props.onInitiateSwap?.(slot, a);
+                                    } else {
+                                      props.onToggleCompleted?.(a.lessonId);
+                                    }
+                                  }}
                                   className={
-                                    'whitespace-nowrap font-medium text-sm pointer-events-none transition-colors ' +
+                                    'cursor-pointer whitespace-nowrap font-medium text-sm transition-colors ' +
                                     (props.swapModeActive
                                       ? 'text-[#1F6F63] font-bold'
                                       : isCompleted
@@ -567,13 +563,14 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                       ? 'text-[#A06C18]'
                                       : 'text-[#1C2B33]')
                                   }
+                                  title={props.swapModeActive ? '클릭하여 일정 변경' : '클릭하여 출석 체크/취소'}
                                 >
                                   {props.swapModeActive && '🔄 '}
                                   {a.name}{isCrossDay ? `(${memDay === 'TUE' ? '화' : '목'})` : ''}
                                 </span>
 
                                 {isAdmin && props.showDetailInfo && (
-                                  <span className={'whitespace-nowrap text-xs pointer-events-none ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
+                                  <span className={'whitespace-nowrap text-xs ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
                                     {displayPhone(a.phone)} {a.department ?? '-'}
                                   </span>
                                 )}
@@ -587,7 +584,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                     ✕
                                   </button>
                                 )}
-                              </span>
+                              </div>
                             );
                           })}
 
@@ -654,7 +651,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 🎯 하단 변경 내역(히스토리) */}
+          {/* 하단 변경 내역(히스토리) */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
             <div className="mt-4 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-2xs">
               <div className="mb-2 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1.5">
