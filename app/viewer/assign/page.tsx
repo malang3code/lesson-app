@@ -2,41 +2,10 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ViewerDrawer from '@/components/ViewerDrawer';
+import LessonScheduleView, { Slot, AssignedItem, SwapHistoryItem } from '@/components/LessonScheduleView';
+import LessonSwapModal, { SwapTargetInfo } from '@/components/LessonSwapModal';
+import { useScheduleSaveBar } from '@/hooks/useScheduleSaveBar';
 import { toPng } from 'html-to-image';
-
-type AssignedItem = {
-  lessonId: number | string;
-  memberId: number;
-  name: string;
-  department: string | null;
-  phone: string | null;
-  isCompleted?: boolean;
-};
-
-type Slot = {
-  id: number;
-  start_time: string;
-  end_time: string;
-  capacity: number;
-  assigned?: AssignedItem[];
-};
-
-function dowLabel(dateStr: string) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dow = new Date(y, m - 1, d).getDay();
-  return ['일', '월', '화', '수', '목', '금', '토'][dow];
-}
-
-function todayStr() {
-  const d = new Date();
-  return (
-    d.getFullYear() +
-    '-' +
-    String(d.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(d.getDate()).padStart(2, '0')
-  );
-}
 
 export default function ViewerAssignPage() {
   const [rawDates, setRawDates] = useState<string[]>([]);
@@ -48,21 +17,116 @@ export default function ViewerAssignPage() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
 
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+
+  // 🎯 스왑(변경) 관련 상태
+  const [swapModeActive, setSwapModeActive] = useState(false);
+  const [swapModalOpen, setSwapModalOpen] = useState(false);
+  const [swapSourceInfo, setSwapSourceInfo] = useState<SwapTargetInfo | null>(null);
+  const [swapHistories, setSwapHistories] = useState<SwapHistoryItem[]>([]);
+  const [pendingSwap, setPendingSwap] = useState<{
+    source: SwapTargetInfo;
+    target: SwapTargetInfo;
+  } | null>(null);
 
   const captureRef = useRef<HTMLDivElement>(null);
 
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
+  // 🎯 해당 날짜 스왑 이력 로드
+  const loadSwapHistories = useCallback(async (date: string | null) => {
+    if (!date) {
+      setSwapHistories([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/lessons/swap?date=${date}`);
+      const data = await res.json();
+      if (res.ok) {
+        setSwapHistories(data.histories || []);
+      }
+    } catch {
+      setSwapHistories([]);
+    }
   }, []);
 
   useEffect(() => {
-    if (!toastMessage) return;
-    const timer = setTimeout(() => setToastMessage(''), 1200);
-    return () => clearTimeout(timer);
-  }, [toastMessage]);
+    loadSwapHistories(selectedDate);
+  }, [selectedDate, loadSwapHistories]);
+
+  // 🎯 공통 훅 연결
+  const {
+    isDirty,
+    showSaveBar,
+    saving,
+    toastMessage,
+    showToast,
+    closeToast,
+    handleRevert,
+    handleSave,
+  } = useScheduleSaveBar({
+    currentData: slots,
+    originalData: originalSlots,
+    onRevertCallback: () => {
+      setSlots(originalSlots);
+      setPendingSwap(null);
+    },
+    onSave: async () => {
+      if (!selectedDate) return false;
+
+      if (pendingSwap) {
+        const swapRes = await fetch('/api/lessons/swap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: pendingSwap.source,
+            target: pendingSwap.target,
+          }),
+        });
+
+        const swapData = await swapRes.json();
+        if (!swapRes.ok) {
+          showToast(swapData.error || '일정 변경 저장 실패');
+          return false;
+        }
+
+        setPendingSwap(null);
+        await loadData();
+        await loadSwapHistories(selectedDate);
+        return true;
+      }
+
+      const assignments = slots.flatMap((slot) =>
+        (slot.assigned || []).map((a) => ({
+          timeSlotId: slot.id,
+          memberId: a.memberId,
+          isCompleted: !!a.isCompleted,
+        }))
+      );
+
+      const res = await fetch('/api/admin/lessons/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonDate: selectedDate,
+          assignments,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || '저장 실패');
+        return false;
+      }
+
+      setOriginalSlots(slots);
+      return true;
+    },
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const currentYm = today.slice(0, 7);
+  const currentCalYm = `${calYear}-${String(calMonth).padStart(2, '0')}`;
 
   useEffect(() => {
     fetch('/api/lesson-dates')
@@ -70,36 +134,25 @@ export default function ViewerAssignPage() {
       .then((data) => {
         const dates: string[] = data.dates ?? [];
         setRawDates(dates);
-
-        const today = todayStr();
         const upcoming = dates.find((d) => d >= today);
-        if (upcoming) {
-          setSelectedDate(upcoming);
-          const [y, m] = upcoming.split('-').map(Number);
-          setCalYear(y);
-          setCalMonth(m);
-        } else if (dates.length > 0) {
-          setSelectedDate(dates[0]);
-          const [y, m] = dates[0].split('-').map(Number);
+        const initial = upcoming || dates[0] || null;
+        if (initial) {
+          setSelectedDate(initial);
+          const [y, m] = initial.split('-').map(Number);
           setCalYear(y);
           setCalMonth(m);
         }
       })
       .catch(() => showToast('레슨일 목록을 불러오지 못했습니다'));
-  }, [showToast]);
+  }, [showToast, today]);
 
   const activeLessonDateSet = useMemo(() => new Set(rawDates), [rawDates]);
-  const today = todayStr();
-  const currentYm = today.slice(0, 7);
-  const currentCalYm = `${calYear}-${String(calMonth).padStart(2, '0')}`;
 
   const calendarDays = useMemo(() => {
     const firstDow = new Date(calYear, calMonth - 1, 1).getDay();
     const lastDate = new Date(calYear, calMonth, 0).getDate();
-
-    const days: ({ dateStr: string; dayNum: number; isLesson: boolean; isBeforeCurrentMonth: boolean } | null)[] = [];
+    const days = [];
     for (let i = 0; i < firstDow; i++) days.push(null);
-
     for (let d = 1; d <= lastDate; d++) {
       const dateStr = `${calYear}-${String(calMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const ym = dateStr.slice(0, 7);
@@ -120,19 +173,23 @@ export default function ViewerAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
-  const handleSwitchDate = (newDate: string) => {
+  const confirmSwitchDate = (newDate: string) => {
+    if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) return;
     setSelectedDate(newDate);
     const [y, m] = newDate.split('-').map(Number);
     setCalYear(y);
     setCalMonth(m);
+    setSwapModeActive(false);
   };
 
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
+      setOriginalSlots([]);
       return;
     }
     setLoading(true);
+    setSlots([]);
     try {
       const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
@@ -141,8 +198,9 @@ export default function ViewerAssignPage() {
         return;
       }
       setSlots(data.slots ?? []);
+      setOriginalSlots(data.slots ?? []);
     } catch {
-      showToast('네트워크 오류가 발생했습니다.');
+      showToast('네트워크 오류');
     } finally {
       setLoading(false);
     }
@@ -152,269 +210,170 @@ export default function ViewerAssignPage() {
     loadData();
   }, [loadData]);
 
-  // 📷 캡처 & 공유 핸들러
+  const handleToggleCompleted = (lessonId: number | string) => {
+    setSlots((prev) =>
+      prev.map((s) => ({
+        ...s,
+        assigned: (s.assigned || []).map((a) =>
+          a.lessonId === lessonId ? { ...a, isCompleted: !a.isCompleted } : a
+        ),
+      }))
+    );
+  };
+
+  const handleInitiateSwap = (slot: Slot, item: AssignedItem) => {
+    if (!selectedDate) return;
+    setSwapSourceInfo({
+      lessonDate: selectedDate,
+      timeSlotId: slot.id,
+      timeStr: (slot.start_time || '').slice(0, 5),
+      memberId: item.memberId,
+      memberName: item.name,
+    });
+    setSwapModalOpen(true);
+  };
+
+  const handleSelectSwapTarget = (target: SwapTargetInfo) => {
+    if (!swapSourceInfo) return;
+
+    setPendingSwap({
+      source: swapSourceInfo,
+      target,
+    });
+
+    if (swapSourceInfo.lessonDate === target.lessonDate) {
+      setSlots((prev) => {
+        const sourceItem = prev
+          .flatMap((s) => s.assigned || [])
+          .find((a) => a.memberId === swapSourceInfo.memberId);
+        const targetItem = target.memberId
+          ? prev.flatMap((s) => s.assigned || []).find((a) => a.memberId === target.memberId)
+          : null;
+
+        return prev.map((s) => {
+          let list = [...(s.assigned || [])];
+          if (s.id === swapSourceInfo.timeSlotId) {
+            list = list.filter((a) => a.memberId !== swapSourceInfo.memberId);
+            if (targetItem) list.push(targetItem);
+          }
+          if (s.id === target.timeSlotId) {
+            if (targetItem) list = list.filter((a) => a.memberId !== target.memberId);
+            if (sourceItem) list.push(sourceItem);
+          }
+          return { ...s, assigned: list };
+        });
+      });
+    } else {
+      setSlots((prev) =>
+        prev.map((s) => {
+          if (s.id === swapSourceInfo.timeSlotId) {
+            return {
+              ...s,
+              assigned: (s.assigned || []).filter((a) => a.memberId !== swapSourceInfo.memberId),
+            };
+          }
+          return s;
+        })
+      );
+    }
+
+    setSwapModalOpen(false);
+    setSwapModeActive(false);
+    showToast(`${swapSourceInfo.memberName} ⟷ ${target.memberName} 맞교환 준비 완료 (하단 저장 클릭)`);
+  };
+
+  // 🎯 이력 원복 핸들러
+  const handleRevertSwapHistory = async (historyId: number) => {
+    if (!confirm('이 변경 건을 원래 일정으로 되돌리시겠습니까?')) return;
+    try {
+      const res = await fetch(`/api/lessons/swap?id=${historyId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || '원복 실패');
+        return;
+      }
+      showToast('원래 일정으로 복구되었습니다.');
+      await loadData();
+      await loadSwapHistories(selectedDate);
+    } catch {
+      showToast('네트워크 오류');
+    }
+  };
+
   const handleShareImage = async () => {
     if (!captureRef.current || capturing || !selectedDate) return;
     setCapturing(true);
     showToast('이미지 생성 중...');
-
     try {
-      const dataUrl = await toPng(captureRef.current, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: '#FAFAF7',
-      });
-
+      const dataUrl = await toPng(captureRef.current, { cacheBust: true, pixelRatio: 2, backgroundColor: '#FAFAF7' });
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const file = new File([blob], `lesson-${selectedDate}.png`, { type: 'image/png' });
-
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: `${selectedDate} 레슨 시간표`,
-          text: `[레슨 시간표] ${selectedDate} (${dowLabel(selectedDate)}) 일정입니다.`,
-          files: [file],
-        });
-        showToast('공유창을 열었습니다.');
+        await navigator.share({ title: `${selectedDate} 레슨 시간표`, files: [file] });
       } else {
         const link = document.createElement('a');
         link.href = dataUrl;
         link.download = `레슨시간표_${selectedDate}.png`;
         link.click();
-        showToast('시간표 이미지가 저장되었습니다.');
       }
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') showToast('이미지 생성 실패');
+    } catch {
+      showToast('이미지 생성 실패');
     } finally {
       setCapturing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] pb-24 text-[#1C2B33]">
-      <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-8 pb-6 sm:px-8">
-        <div className="flex flex-wrap items-center gap-3">
-          <ViewerDrawer />
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
-            레슨 시간표
-          </h1>
+    <>
+      <LessonScheduleView
+        mode="viewer"
+        drawer={<ViewerDrawer />}
+        selectedDate={selectedDate}
+        slots={slots}
+        loading={loading}
+        capturing={capturing}
+        toastMessage={toastMessage}
+        captureRef={captureRef}
+        onShareImage={handleShareImage}
+        canPrev={currentLessonIndex > 0}
+        canNext={currentLessonIndex >= 0 && currentLessonIndex < navigableLessonDates.length - 1}
+        onPrev={() => currentLessonIndex > 0 && confirmSwitchDate(navigableLessonDates[currentLessonIndex - 1])}
+        onNext={() => currentLessonIndex < navigableLessonDates.length - 1 && confirmSwitchDate(navigableLessonDates[currentLessonIndex + 1])}
+        calendarOpen={calendarOpen}
+        onToggleCalendar={() => setCalendarOpen((v) => !v)}
+        calYear={calYear}
+        calMonth={calMonth}
+        calendarDays={calendarDays}
+        showPast={showPast}
+        onToggleShowPast={() => setShowPast((v) => !v)}
+        onPrevMonth={() => setCalMonth((prev) => (prev === 1 ? (setCalYear((y) => y - 1), 12) : prev - 1))}
+        onNextMonth={() => setCalMonth((prev) => (prev === 12 ? (setCalYear((y) => y + 1), 1) : prev + 1))}
+        onSelectDate={(d) => { confirmSwitchDate(d); setCalendarOpen(false); }}
+        currentCalYm={currentCalYm}
+        currentYm={currentYm}
+        swapModeActive={swapModeActive}
+        onToggleSwapMode={() => setSwapModeActive((v) => !v)}
+        onInitiateSwap={handleInitiateSwap}
+        swapHistories={swapHistories}
+        onRevertSwapHistory={handleRevertSwapHistory}
+        onToggleCompleted={handleToggleCompleted}
+        isDirty={isDirty}
+        saving={saving}
+        showSaveBar={showSaveBar}
+        onRevert={handleRevert}
+        onSaveChanges={handleSave}
+        onCloseToast={closeToast}
+      />
 
-          <button
-            type="button"
-            onClick={handleShareImage}
-            disabled={capturing || !selectedDate || slots.length === 0}
-            className="flex h-8 items-center gap-1.5 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33] shadow-xs transition-all active:scale-95 hover:bg-[#1C2B33]/5 disabled:opacity-40"
-          >
-            <span className="text-xs">📷</span>
-            <span>{capturing ? '생성 중...' : '이미지 공유'}</span>
-          </button>
-        </div>
-
-        {/* 상단 네비게이션: 날짜 뱃지 제외 & '캘린더' 텍스트 적용 */}
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => currentLessonIndex > 0 && handleSwitchDate(navigableLessonDates[currentLessonIndex - 1])}
-            disabled={currentLessonIndex <= 0}
-            className="flex h-8 items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
-          >
-            ◀ 이전
-          </button>
-
-          <button
-            type="button"
-            onClick={() => currentLessonIndex < navigableLessonDates.length - 1 && handleSwitchDate(navigableLessonDates[currentLessonIndex + 1])}
-            disabled={currentLessonIndex === -1 || currentLessonIndex >= navigableLessonDates.length - 1}
-            className="flex h-8 items-center gap-1 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/80 transition-colors hover:bg-[#1C2B33]/5 disabled:opacity-30"
-          >
-            다음 ▶
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCalendarOpen((v) => !v)}
-            className={
-              'flex h-8 items-center rounded-full px-3 text-xs font-semibold transition-colors ' +
-              (calendarOpen
-                ? 'bg-[#1C2B33] text-white shadow-xs'
-                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
-            }
-          >
-            {calendarOpen ? '✕ 달력 접기' : '📅 캘린더'}
-          </button>
-        </div>
-
-        {calendarOpen && (
-          <div className="mt-3 max-w-sm rounded-2xl border border-[#1C2B33]/10 bg-white p-4 shadow-[0_4px_12px_rgba(28,43,51,0.08)]">
-            <div className="mb-3 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setCalMonth((prev) => (prev === 1 ? (setCalYear((y) => y - 1), 12) : prev - 1))}
-                disabled={!showPast && currentCalYm <= currentYm}
-                className="grid h-7 w-7 place-items-center rounded-full border border-[#1C2B33]/15 text-xs text-[#1C2B33]/70 disabled:opacity-20 hover:bg-[#1C2B33]/5"
-              >
-                ◀
-              </button>
-              <span className="font-[family-name:var(--font-display)] text-base font-semibold">
-                {calYear}년 {calMonth}월
-              </span>
-              <button
-                type="button"
-                onClick={() => setCalMonth((prev) => (prev === 12 ? (setCalYear((y) => y + 1), 1) : prev + 1))}
-                className="grid h-7 w-7 place-items-center rounded-full border border-[#1C2B33]/15 text-xs text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
-              >
-                ▶
-              </button>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 text-center font-[family-name:var(--font-mono-club)] text-xs">
-              {['일', '월', '화', '수', '목', '금', '토'].map((dow, idx) => (
-                <div key={dow} className={'py-1 font-semibold ' + (idx === 2 || idx === 4 ? 'text-[#1C2B33]' : idx === 0 ? 'text-[#B5482F]/60' : 'text-[#1C2B33]/40')}>
-                  {dow}
-                </div>
-              ))}
-
-              {calendarDays.map((item, idx) => {
-                if (!item) return <div key={`empty-${idx}`} className="h-8" />;
-                const isSelected = selectedDate === item.dateStr;
-                const isDimmed = !showPast && item.isBeforeCurrentMonth;
-
-                return (
-                  <button
-                    key={item.dateStr}
-                    type="button"
-                    onClick={() => {
-                      handleSwitchDate(item.dateStr);
-                      setCalendarOpen(false);
-                    }}
-                    disabled={isDimmed}
-                    className={
-                      'relative h-8 rounded-lg text-xs font-medium transition-all ' +
-                      (isSelected
-                        ? 'bg-[#1C2B33] text-white shadow font-bold'
-                        : item.isLesson
-                        ? 'bg-[#1C2B33]/10 text-[#1C2B33] font-semibold hover:bg-[#1C2B33]/15'
-                        : isDimmed
-                        ? 'opacity-25 text-[#1C2B33]/40 cursor-not-allowed'
-                        : 'text-[#1C2B33]/40 hover:bg-[#1C2B33]/5')
-                    }
-                  >
-                    {item.dayNum}
-                    {item.isLesson && !isSelected && (
-                      <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-[#8F3A24]" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 border-t border-[#1C2B33]/10 pt-2.5">
-              <button
-                type="button"
-                onClick={() => setShowPast((prev) => !prev)}
-                className="text-xs text-[#1C2B33]/60 underline underline-offset-2 hover:text-[#1C2B33]"
-              >
-                {showPast ? '✓ 이전 달 포함됨 (클릭 시 제외)' : '이전 달(과거) 레슨일 조회'}
-              </button>
-            </div>
-          </div>
-        )}
-      </header>
-
-      {/* 본문 시간표 영역 (순수 Read-Only 캡처 대상) */}
-      <main className="px-4 py-6 sm:px-8">
-        <div ref={captureRef} className="relative w-full max-w-2xl bg-[#FAFAF7] p-4 sm:p-6 rounded-3xl">
-          
-          {/* 캡처 이미지 상단 날짜 헤더 */}
-          {selectedDate && (
-            <div className="mb-5 pb-3 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
-              <div className="flex items-baseline gap-2">
-                <span className="font-[family-name:var(--font-display)] text-xl font-bold text-[#1C2B33]">
-                  {selectedDate} ({dowLabel(selectedDate)})
-                </span>
-                <span className="text-xs font-semibold text-[#1C2B33]/60">레슨 시간표</span>
-              </div>
-            </div>
-          )}
-
-          <div className="relative">
-            <div className="absolute top-4 bottom-4 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[68px]" />
-
-            <div className="space-y-3">
-              {slots.map((slot) => {
-                const assignedList = slot.assigned || [];
-                const capacity = slot.capacity || 2;
-                const isFull = assignedList.length >= capacity;
-                const emptySlotsCount = Math.max(0, capacity - assignedList.length);
-                const startH = (slot.start_time || '').slice(0, 5);
-
-                return (
-                  <div key={slot.id} className="relative flex gap-3 sm:gap-6">
-                    <div className="w-[52px] shrink-0 pt-3 text-right sm:w-[68px]">
-                      <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-xl whitespace-nowrap">
-                        {startH}
-                      </span>
-                    </div>
-
-                    <div
-                      className={
-                        'z-10 mt-4 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
-                        (isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
-                      }
-                      style={{ marginLeft: '-6px' }}
-                    />
-
-                    <div className="flex-1 rounded-2xl border border-[#1C2B33]/10 bg-white p-2.5 sm:p-3 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                        {assignedList.map((a) => {
-                          const isCompleted = !!a.isCompleted;
-
-                          return (
-                            <span
-                              key={a.lessonId}
-                              className={
-                                'inline-flex h-[34px] shrink-0 items-center justify-center rounded-full border px-3.5 text-sm font-medium transition-all select-none ' +
-                                (isCompleted
-                                  ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30 line-through'
-                                  : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10')
-                              }
-                            >
-                              <span className="whitespace-nowrap">{a.name}</span>
-                            </span>
-                          );
-                        })}
-
-                        {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                          <div
-                            key={`empty-${slot.id}-${idx}`}
-                            className="flex h-[34px] w-[64px] shrink-0 items-center justify-center rounded-full border border-dashed border-[#1C2B33]/15 text-xs text-[#1C2B33]/25 select-none whitespace-nowrap"
-                          >
-                            빈자리
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {!loading && selectedDate && slots.length === 0 && (
-                <p className="pl-[68px] text-sm text-[#1C2B33]/40">
-                  {activeLessonDateSet.has(selectedDate)
-                    ? '이 날짜에는 시간대 슬롯이 없습니다.'
-                    : '등록된 레슨일이 아닙니다.'}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <span>{toastMessage}</span>
-        </div>
-      )}
-    </div>
+      <LessonSwapModal
+        isOpen={swapModalOpen}
+        onClose={() => setSwapModalOpen(false)}
+        sourceInfo={swapSourceInfo}
+        rawDates={rawDates}
+        currentYm={currentYm}
+        onSelectTarget={handleSelectSwapTarget}
+      />
+    </>
   );
 }

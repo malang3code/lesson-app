@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminDrawer from '@/components/AdminDrawer';
 
 type LessonDay = 'TUE' | 'THU' | 'BOTH';
@@ -57,6 +57,14 @@ export default function AdminSettingsPage() {
     const timer = setTimeout(() => setToastMessage(''), 1000);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  // 🎯 활성 회원 기준 화요일 / 목요일 인원수 집계
+  const { tueCount, thuCount } = useMemo(() => {
+    const activeMembers = members.filter((m) => m.is_active);
+    const tue = activeMembers.filter((m) => m.lesson_day === 'TUE' || m.lesson_day === 'BOTH').length;
+    const thu = activeMembers.filter((m) => m.lesson_day === 'THU' || m.lesson_day === 'BOTH').length;
+    return { tueCount: tue, thuCount: thu };
+  }, [members]);
 
   // 신규 등록 폼 상태
   const [newMember, setNewMember] = useState<{
@@ -265,9 +273,17 @@ export default function AdminSettingsPage() {
         <div className="flex items-center gap-3">
           <AdminDrawer />
           <div>
-            <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
-              정보 관리
-            </h1>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
+                정보 관리
+              </h1>
+              {/* 🎯 활성 수강생 화 ??명 / 목 ??명 표시 */}
+              <div className="flex items-center gap-1.5 rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1 text-sm font-semibold text-[#1C2B33]/80 shadow-2xs">
+                <span>화 {tueCount}명</span>
+                <span className="text-[#1C2B33]/30">/</span>
+                <span>목 {thuCount}명</span>
+              </div>
+            </div>
             <a
               href="/admin/assign"
               className="mt-1 inline-block text-sm text-[#1C2B33]/50 underline underline-offset-2 hover:text-[#1C2B33]"
@@ -381,7 +397,8 @@ export default function AdminSettingsPage() {
                     <th className="py-3 px-2 text-center">이름</th>
                     <th className="py-3 px-3 text-center">요일</th>
                     <th className="py-3 px-3 text-center">전화번호</th>
-                    <th className="py-3 px-3 text-center">부서</th>
+                    {/* 🎯 부서 컬럼 헤더: 가운데 정렬 */}
+                    <th className="py-3 px-4 text-center">부서</th>
                     <th className="py-3 px-3 text-center">관리</th>
                   </tr>
                 </thead>
@@ -391,27 +408,27 @@ export default function AdminSettingsPage() {
                     return (
                       <tr key={m.id} className={m.is_active ? '' : 'bg-[#1C2B33]/[0.02] opacity-50'}>
                         {/* 1. 상태 */}
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => handleToggleMemberActive(m)}
                             className={
-                              'rounded-full px-2 py-0.5 text-xs font-semibold ' +
+                              'inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-tight transition-all active:scale-95 ' +
                               (m.is_active
-                                ? 'bg-[#1F6F63]/10 text-[#1F6F63]'
-                                : 'bg-[#1C2B33]/10 text-[#1C2B33]/50')
+                                ? 'bg-[#1F6F63]/15 text-[#1F6F63] border border-[#1F6F63]/30'
+                                : 'bg-[#1C2B33]/10 text-[#1C2B33]/40 border border-[#1C2B33]/15')
                             }
                           >
-                            {m.is_active ? '활성' : '비활성'}
+                            {m.is_active ? 'ON' : 'OFF'}
                           </button>
                         </td>
 
-                        {/* 2. 사번 (간격 축소) */}
+                        {/* 2. 사번 */}
                         <td className="py-2.5 px-2 text-center font-semibold text-[#1C2B33] whitespace-nowrap">
                           {m.employee_no ?? '-'}
                         </td>
 
-                        {/* 3. 이름 (간격 축소) */}
+                        {/* 3. 이름 */}
                         <td className="py-2.5 px-2 text-center font-medium whitespace-nowrap">
                           {m.name}
                         </td>
@@ -428,8 +445,8 @@ export default function AdminSettingsPage() {
                           {displayPhone(m.phone)}
                         </td>
 
-                        {/* 6. 부서 (뒤로 배치) */}
-                        <td className="py-2.5 px-3 text-center text-[#1C2B33]/60 max-w-[140px] truncate">
+                        {/* 6. 부서: 🎯 데이터만 왼쪽 정렬 (text-left) */}
+                        <td className="py-2.5 px-4 text-left text-[#1C2B33]/70 max-w-[160px] truncate font-normal">
                           {m.department ?? '-'}
                         </td>
 
