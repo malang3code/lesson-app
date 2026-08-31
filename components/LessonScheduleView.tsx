@@ -97,7 +97,7 @@ interface LessonScheduleViewProps {
   onSelectDate: (d: string) => void;
   currentCalYm: string;
   currentYm: string;
-  // 변경(스왑) 모드 (공통)
+  // 변경(스왑) 모드 (공통: Admin & Viewer)
   swapModeActive?: boolean;
   onToggleSwapMode?: () => void;
   onInitiateSwap?: (slot: Slot, item: AssignedItem) => void;
@@ -106,21 +106,20 @@ interface LessonScheduleViewProps {
   // 정보 토글 (관리자 전용)
   showDetailInfo?: boolean;
   onToggleDetailInfo?: () => void;
-  // 관리자 전용 기능
+  // 초기 배정 및 수동 관리 (관리자 전용)
   eligibleMembers?: Member[];
   showAllOverride?: Record<number, boolean>;
   onToggleOverride?: (slotId: number) => void;
   onAssign?: (slotId: number, memberId: string) => void;
   onRemove?: (lessonId: number | string) => void;
   onToggleCompleted?: (lessonId: number | string) => void;
-  // 드래그 앤 드롭 (관리자)
+  // 드래그 앤 드롭 (초기 배정 시 관리자 전용 - PC 마우스)
   dragOverSlotId?: number | null;
   onDragStart?: (e: React.DragEvent, item: AssignedItem, slotId: number) => void;
   onDragEnd?: () => void;
   onDragOverSlot?: (slotId: number) => void;
   onDragLeaveSlot?: (slotId: number) => void;
   onDropToSlot?: (slotId: number) => void;
-  onTouchStart?: (e: React.TouchEvent, item: AssignedItem, slotId: number) => void;
   // 관리자 도구 (복사/비우기)
   copyPanelOpen?: boolean;
   onToggleCopyPanel?: () => void;
@@ -138,9 +137,6 @@ interface LessonScheduleViewProps {
   showSaveBar?: boolean;
   onRevert?: () => void;
   onSaveChanges?: () => void;
-  // 플로팅 터치 배지 (관리자)
-  touchPos?: { x: number; y: number } | null;
-  draggedItem?: { memberName: string } | null;
   onCloseToast?: () => void;
 }
 
@@ -190,7 +186,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
           </button>
         </div>
 
-        {/* 2행: 컨트롤 버튼 바 (변경 버튼은 날짜 헤더로 이동) */}
+        {/* 2행: 컨트롤 버튼 바 */}
         <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
           <button
             type="button"
@@ -380,7 +376,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
       {/* 🎯 본문 시간표 영역 */}
       <main className="px-4 pt-1.5 pb-4 sm:px-6 w-full max-w-[580px]">
         <div ref={props.captureRef} className="relative w-full bg-[#FAFAF7] p-2 sm:p-3 rounded-2xl">
-          {/* 🎯 날짜 헤더 & 출석 현황 & [🔄 변경] 버튼 위치 */}
+          {/* 날짜 헤더 & 출석 현황 & [🔄 변경] 버튼 */}
           {props.selectedDate && (
             <div className="mb-3 pb-2 border-b-2 border-[#1C2B33]/15 flex items-center justify-between">
               <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
@@ -397,7 +393,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                 </span>
               </div>
 
-              {/* 🎯 레슨 시간표 우측 변경 버튼 */}
+              {/* 공통: 변경 버튼 */}
               <button
                 type="button"
                 onClick={props.onToggleSwapMode}
@@ -471,7 +467,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 슬롯 카드 컨테이너 */}
+                      {/* 슬롯 카드 컨테이너 (관리자 초기 배정 시 드롭 영역 지원) */}
                       <div
                         data-slot-id={slot.id}
                         onDragOver={isAdmin ? (e) => { e.preventDefault(); props.onDragOverSlot?.(slot.id); } : undefined}
@@ -508,10 +504,9 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                 draggable={isAdmin && !props.swapModeActive}
                                 onDragStart={isAdmin && !props.swapModeActive ? (e) => props.onDragStart?.(e, a, slot.id) : undefined}
                                 onDragEnd={isAdmin && !props.swapModeActive ? props.onDragEnd : undefined}
-                                onTouchStart={isAdmin && !props.swapModeActive ? (e) => props.onTouchStart?.(e, a, slot.id) : undefined}
                                 className={
                                   'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
-                                  (isAdmin && !props.swapModeActive ? 'active:cursor-grabbing touch-none ' : '') +
+                                  (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing ' : '') +
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
                                     : isCompleted
@@ -633,7 +628,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 🎯 하단 변경 내역(히스토리) - 가로 스크롤 & 원복 버튼 겹침 완벽 방어 */}
+          {/* 🎯 하단 변경 내역(히스토리) - 관리자/뷰어 공통 */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
             <div className="mt-4 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-2xs">
               <div className="mb-2 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1.5">
@@ -659,16 +654,13 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                       key={h.id}
                       className="flex items-center justify-between gap-2 rounded-xl bg-[#FAFAF7] px-2.5 py-1.5 text-xs text-[#1C2B33] border border-[#1C2B33]/5"
                     >
-                      {/* 텍스트 영역: 모바일에서도 잘리지 않도록 overflow-x-auto & no-scrollbar 적용 */}
                       <div className="flex items-center gap-1.5 font-medium text-xs overflow-x-auto no-scrollbar whitespace-nowrap min-w-0 pr-1">
-                        {/* 이벤트 발생 일시 뱃지 */}
                         {eventTimeStr && (
                           <span className="font-[family-name:var(--font-mono-club)] text-[10px] font-semibold text-[#1C2B33]/50 bg-[#1C2B33]/5 px-1.5 py-0.5 rounded-md shrink-0">
                             {eventTimeStr}
                           </span>
                         )}
 
-                        {/* 변경 내역 본문 */}
                         <span className="text-[#1F6F63] font-bold shrink-0">
                           {leftDate.slice(5)}({dowLabel(leftDate)}) {leftTime}
                         </span>
@@ -680,7 +672,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         <span className="font-bold text-[#1C2B33] shrink-0">{rightName}</span>
                       </div>
 
-                      {/* 🎯 원복 버튼: 절대 축소되거나 덮이지 않도록 shrink-0 설정 */}
                       <button
                         type="button"
                         onClick={() => props.onRevertSwapHistory?.(h.id)}
@@ -696,17 +687,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
           )}
         </div>
       </main>
-
-      {/* 모바일 플로팅 드래그 배지 */}
-      {isAdmin && props.touchPos && props.draggedItem && (
-        <div
-          style={{ left: props.touchPos.x, top: props.touchPos.y, transform: 'translate(-50%, -120%)' }}
-          className="pointer-events-none fixed z-50 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[#1C2B33] px-3.5 py-1.5 text-sm font-semibold text-white shadow-2xl ring-2 ring-white/50 animate-pulse"
-        >
-          <span>✋</span>
-          <span>{props.draggedItem.memberName}</span>
-        </div>
-      )}
 
       {/* 하단 플로팅 저장 바 */}
       {props.showSaveBar && props.isDirty && (
