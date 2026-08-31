@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, RefObject, useMemo, useState } from 'react';
+import { ReactNode, RefObject, useMemo } from 'react';
 
 export type LessonDay = 'TUE' | 'THU' | 'BOTH';
 
@@ -112,8 +112,6 @@ interface LessonScheduleViewProps {
   onAssign?: (slotId: number, memberId: string) => void;
   onRemove?: (lessonId: number | string) => void;
   onToggleCompleted?: (lessonId: number | string) => void;
-  // 브라우저 네이티브 드래그 앤 드롭 이동 핸들러
-  onMoveMemberToSlot?: (lessonId: number | string, srcSlotId: number, destSlotId: number) => void;
   // 관리자 도구
   copyPanelOpen?: boolean;
   onToggleCopyPanel?: () => void;
@@ -126,8 +124,6 @@ interface LessonScheduleViewProps {
   // 하단 저장 바
   isDirty?: boolean;
   saving?: boolean;
-  hasOverCapacity?: boolean;
-  overCapacityCount?: number;
   showSaveBar?: boolean;
   onRevert?: () => void;
   onSaveChanges?: () => void;
@@ -137,7 +133,6 @@ interface LessonScheduleViewProps {
 export default function LessonScheduleView(props: LessonScheduleViewProps) {
   const isAdmin = props.mode === 'admin';
   const hasAssignments = props.slots.some((s) => (s.assigned || []).length > 0);
-  const [activeDragTargetSlotId, setActiveDragTargetSlotId] = useState<number | null>(null);
 
   const [y, m, d] = props.selectedDate ? props.selectedDate.split('-').map(Number) : [0, 0, 0];
   const currentSelectedDow = props.selectedDate ? new Date(y, m - 1, d).getDay() : null;
@@ -433,11 +428,9 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                     return true;
                   });
 
-                  const isOver = assignedList.length > capacity;
                   const isFull = assignedList.length >= capacity;
                   const emptySlotsCount = Math.max(0, capacity - assignedList.length);
                   const startH = (slot.start_time || '').slice(0, 5);
-                  const isDragHover = activeDragTargetSlotId === slot.id;
 
                   return (
                     <div key={slot.id} className="relative flex items-center gap-2.5 sm:gap-3.5">
@@ -450,73 +443,16 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                       <div
                         className={
                           'z-10 h-3 w-3 shrink-0 rounded-full border-2 border-[#FAFAF7] ' +
-                          (isOver
-                            ? 'bg-[#B5482F] animate-pulse'
-                            : isFull
-                            ? 'bg-[#1F6F63]'
-                            : 'bg-[#C98A2B]')
+                          (isFull ? 'bg-[#1F6F63]' : 'bg-[#C98A2B]')
                         }
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 🎯 슬롯 카드 컨테이너 */}
+                      {/* 슬롯 카드 컨테이너 */}
                       <div
                         data-slot-id={slot.id}
-                        onDragOver={
-                          isAdmin && !props.swapModeActive
-                            ? (e) => {
-                                e.preventDefault();
-                                e.dataTransfer.dropEffect = 'move';
-                                if (activeDragTargetSlotId !== slot.id) {
-                                  setActiveDragTargetSlotId(slot.id);
-                                }
-                              }
-                            : undefined
-                        }
-                        onDragLeave={
-                          isAdmin && !props.swapModeActive
-                            ? (e) => {
-                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                                  setActiveDragTargetSlotId(null);
-                                }
-                              }
-                            : undefined
-                        }
-                        onDrop={
-                          isAdmin && !props.swapModeActive
-                            ? (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setActiveDragTargetSlotId(null);
-                                try {
-                                  const rawData = e.dataTransfer.getData('text/plain');
-                                  if (rawData) {
-                                    const parsed = JSON.parse(rawData);
-                                    props.onMoveMemberToSlot?.(parsed.lessonId, parsed.sourceSlotId, slot.id);
-                                  }
-                                } catch (err) {
-                                  console.error('Drop error:', err);
-                                }
-                              }
-                            : undefined
-                        }
-                        className={
-                          'relative flex-1 rounded-2xl border px-2.5 py-2 transition-all ' +
-                          (isDragHover
-                            ? 'border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-sm'
-                            : isOver
-                            ? 'border-[#B5482F] bg-[#B5482F]/5 shadow-2xs'
-                            : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
-                        }
+                        className="relative flex-1 rounded-2xl border border-[#1C2B33]/10 bg-white px-2.5 py-2 shadow-[0_1px_2px_rgba(28,43,51,0.04)] transition-all"
                       >
-                        {/* ⚠️ 3명 초과 경고 뱃지 */}
-                        {isOver && (
-                          <div className="pointer-events-none absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full bg-[#B5482F] px-2 py-0.5 text-[10px] font-bold text-white shadow-2xs whitespace-nowrap">
-                            <span>⚠️ 초과</span>
-                            <span>({assignedList.length}/{capacity})</span>
-                          </div>
-                        )}
-
                         <div className="flex flex-wrap items-center gap-2">
                           {assignedList.map((a) => {
                             const isCompleted = !!a.isCompleted;
@@ -529,28 +465,12 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                             return (
                               <div
                                 key={a.lessonId}
-                                draggable={isAdmin && !props.swapModeActive}
-                                onDragStart={
-                                  isAdmin && !props.swapModeActive
-                                    ? (e) => {
-                                        e.stopPropagation();
-                                        e.dataTransfer.setData(
-                                          'text/plain',
-                                          JSON.stringify({ lessonId: a.lessonId, sourceSlotId: slot.id })
-                                        );
-                                        e.dataTransfer.effectAllowed = 'move';
-                                      }
-                                    : undefined
-                                }
                                 className={
                                   'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
-                                  (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing hover:border-[#1C2B33]/40 ' : '') +
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
                                     : isCompleted
                                     ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
-                                    : isOver
-                                    ? 'bg-white text-[#B5482F] border-[#B5482F]/40 font-semibold'
                                     : isCrossDay
                                     ? 'bg-[#FFF8E7] text-[#C98A2B] border-[#C98A2B]/40 font-medium'
                                     : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
@@ -571,8 +491,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                       ? 'text-[#1F6F63] font-bold'
                                       : isCompleted
                                       ? 'line-through text-[#1F6F63]'
-                                      : isOver
-                                      ? 'text-[#B5482F]'
                                       : isCrossDay
                                       ? 'text-[#A06C18]'
                                       : 'text-[#1C2B33]')
@@ -665,7 +583,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 🎯 하단 변경 내역(히스토리) - 컴팩트 폰트 & 가독성 최적화 */}
+          {/* 🎯 하단 변경 내역(히스토리) */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
             <div className="mt-3.5 rounded-2xl border border-[#1C2B33]/10 bg-white p-2.5 shadow-2xs">
               <div className="mb-1.5 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1">
@@ -691,7 +609,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                       key={h.id}
                       className="flex items-center justify-between gap-1.5 rounded-lg bg-[#FAFAF7] px-2 py-1 text-[11px] text-[#1C2B33] border border-[#1C2B33]/5"
                     >
-                      {/* 텍스트 영역 (11px 및 타임스탬프 9px로 슬림화) */}
                       <div className="flex items-center gap-1 font-medium text-[11px] overflow-x-auto no-scrollbar whitespace-nowrap min-w-0 pr-1">
                         {eventTimeStr && (
                           <span className="font-[family-name:var(--font-mono-club)] text-[9px] font-semibold text-[#1C2B33]/50 bg-[#1C2B33]/5 px-1 py-0.5 rounded shrink-0">
@@ -710,7 +627,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         <span className="font-bold text-[#1C2B33] shrink-0">{rightName}</span>
                       </div>
 
-                      {/* 🎯 원복 버튼: 콤팩트 크기로 이름 가림 완벽 방어 */}
                       <button
                         type="button"
                         onClick={() => props.onRevertSwapHistory?.(h.id)}
@@ -727,19 +643,13 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
         </div>
       </main>
 
-      {/* 하단 플로팅 저장 바 */}
+      {/* 🎯 하단 플로팅 저장 바 (정원 초과 경고 없이 심플하게 저장/되돌리기 지원) */}
       {props.showSaveBar && props.isDirty && (
         <div className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <div className="min-w-0 flex-1 truncate">
-            {props.hasOverCapacity ? (
-              <span className="truncate text-xs font-semibold text-[#E57373] whitespace-nowrap block">
-                ⚠️ 정원 초과 ({props.overCapacityCount}개)
-              </span>
-            ) : (
-              <span className="truncate text-xs text-white/80 whitespace-nowrap block">
-                수정된 내용이 있습니다
-              </span>
-            )}
+            <span className="truncate text-xs text-white/80 whitespace-nowrap block">
+              수정된 내용이 있습니다
+            </span>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
@@ -753,13 +663,8 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             <button
               type="button"
               onClick={props.onSaveChanges}
-              disabled={props.saving || props.hasOverCapacity}
-              className={
-                'shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold text-white shadow transition-all ' +
-                (props.hasOverCapacity
-                  ? 'bg-white/20 text-white/40 cursor-not-allowed'
-                  : 'bg-[#1F6F63] hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50')
-              }
+              disabled={props.saving}
+              className="shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold text-white shadow transition-all bg-[#1F6F63] hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50"
             >
               {props.saving ? '저장 중...' : '저장'}
             </button>

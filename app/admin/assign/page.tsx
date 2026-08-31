@@ -258,44 +258,6 @@ export default function AdminAssignPage() {
     );
   };
 
-  // 🎯 브라우저 네이티브 드래그 앤 드롭 이동 함수
-  const handleMoveMemberToSlot = useCallback((lessonId: number | string, srcSlotId: number, destSlotId: number) => {
-    if (Number(srcSlotId) === Number(destSlotId)) return;
-
-    setSlots((prevSlots) => {
-      let movingItem: AssignedItem | null = null;
-
-      // 1. 출발지에서 수강생 분리
-      const updatedSlots = prevSlots.map((slot) => {
-        if (slot.id === Number(srcSlotId)) {
-          const remaining: AssignedItem[] = [];
-          (slot.assigned || []).forEach((item) => {
-            if (String(item.lessonId) === String(lessonId)) {
-              movingItem = item;
-            } else {
-              remaining.push(item);
-            }
-          });
-          return { ...slot, assigned: remaining };
-        }
-        return slot;
-      });
-
-      if (!movingItem) return prevSlots;
-
-      // 2. 목적지에 수강생 추가
-      return updatedSlots.map((slot) => {
-        if (slot.id === Number(destSlotId)) {
-          return {
-            ...slot,
-            assigned: [...(slot.assigned || []), movingItem!],
-          };
-        }
-        return slot;
-      });
-    });
-  }, []);
-
   const handleInitiateSwap = (slot: Slot, item: AssignedItem) => {
     if (!selectedDate) return;
     setSwapSourceInfo({
@@ -462,7 +424,6 @@ export default function AdminAssignPage() {
         onAssign={handleAssign}
         onRemove={handleRemove}
         onToggleCompleted={handleToggleCompleted}
-        onMoveMemberToSlot={handleMoveMemberToSlot}
         copyPanelOpen={copyPanelOpen}
         onToggleCopyPanel={() => setCopyPanelOpen((v) => !v)}
         copyTargets={copyTargets}
