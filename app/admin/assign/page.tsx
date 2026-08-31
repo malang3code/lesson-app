@@ -40,9 +40,6 @@ export default function AdminAssignPage() {
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
 
-  const overCapacitySlots = useMemo(() => slots.filter((s) => (s.assigned || []).length > s.capacity), [slots]);
-  const hasOverCapacity = overCapacitySlots.length > 0;
-
   // 🎯 해당 날짜 스왑 이력 로드
   const loadSwapHistories = useCallback(async (date: string | null) => {
     if (!date) {
@@ -82,7 +79,7 @@ export default function AdminAssignPage() {
       setPendingSwap(null);
     },
     onSave: async () => {
-      if (!selectedDate || hasOverCapacity) return false;
+      if (!selectedDate) return false;
 
       if (pendingSwap) {
         const swapRes = await fetch('/api/lessons/swap', {
@@ -434,8 +431,6 @@ export default function AdminAssignPage() {
         onResetDay={() => confirm('배정을 모두 비우시겠습니까?') && setSlots((p) => p.map((s) => ({ ...s, assigned: [] })))}
         isDirty={isDirty}
         saving={saving}
-        hasOverCapacity={hasOverCapacity}
-        overCapacityCount={overCapacitySlots.length}
         showSaveBar={showSaveBar}
         onRevert={handleRevert}
         onSaveChanges={handleSave}
