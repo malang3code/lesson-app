@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, RefObject, useMemo } from 'react';
+import { ReactNode, RefObject, useMemo, useState } from 'react';
 
 export type LessonDay = 'TUE' | 'THU' | 'BOTH';
 
@@ -112,17 +112,8 @@ interface LessonScheduleViewProps {
   onAssign?: (slotId: number, memberId: string) => void;
   onRemove?: (lessonId: number | string) => void;
   onToggleCompleted?: (lessonId: number | string) => void;
-  // PC 마우스 드래그 앤 드롭
-  dragOverSlotId?: number | null;
-  onDragStart?: (e: React.DragEvent, item: AssignedItem, slotId: number) => void;
-  onDragEnd?: () => void;
-  onDragOverSlot?: (slotId: number) => void;
-  onDragLeaveSlot?: (slotId: number) => void;
-  onDropToSlot?: (slotId: number) => void;
-  // 호환용 props
-  onTouchStart?: (e: React.TouchEvent, item: AssignedItem, slotId: number) => void;
-  touchPos?: { x: number; y: number } | null;
-  draggedItem?: { memberName: string } | null;
+  // 브라우저 네이티브 드래그 앤 드롭 이동 핸들러
+  onMoveMemberToSlot?: (lessonId: number | string, srcSlotId: number, destSlotId: number) => void;
   // 관리자 도구
   copyPanelOpen?: boolean;
   onToggleCopyPanel?: () => void;
@@ -146,6 +137,7 @@ interface LessonScheduleViewProps {
 export default function LessonScheduleView(props: LessonScheduleViewProps) {
   const isAdmin = props.mode === 'admin';
   const hasAssignments = props.slots.some((s) => (s.assigned || []).length > 0);
+  const [activeDragTargetSlotId, setActiveDragTargetSlotId] = useState<number | null>(null);
 
   const [y, m, d] = props.selectedDate ? props.selectedDate.split('-').map(Number) : [0, 0, 0];
   const currentSelectedDow = props.selectedDate ? new Date(y, m - 1, d).getDay() : null;
@@ -445,7 +437,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   const isFull = assignedList.length >= capacity;
                   const emptySlotsCount = Math.max(0, capacity - assignedList.length);
                   const startH = (slot.start_time || '').slice(0, 5);
-                  const isDragOver = props.dragOverSlotId === slot.id;
+                  const isDragHover = activeDragTargetSlotId === slot.id;
 
                   return (
                     <div key={slot.id} className="relative flex items-center gap-2.5 sm:gap-3.5">
@@ -467,7 +459,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 🎯 슬롯 카드 컨테이너 (정밀 Drop 영역) */}
+                      {/* 🎯 슬롯 카드 컨테이너 */}
                       <div
                         data-slot-id={slot.id}
                         onDragOver={
@@ -475,7 +467,9 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                             ? (e) => {
                                 e.preventDefault();
                                 e.dataTransfer.dropEffect = 'move';
-                                props.onDragOverSlot?.(slot.id);
+                                if (activeDragTargetSlotId !== slot.id) {
+                                  setActiveDragTargetSlotId(slot.id);
+                                }
                               }
                             : undefined
                         }
@@ -483,7 +477,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                           isAdmin && !props.swapModeActive
                             ? (e) => {
                                 if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                                  props.onDragLeaveSlot?.(slot.id);
+                                  setActiveDragTargetSlotId(null);
                                 }
                               }
                             : undefined
@@ -493,14 +487,23 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                             ? (e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                props.onDropToSlot?.(slot.id);
+                                setActiveDragTargetSlotId(null);
+                                try {
+                                  const rawData = e.dataTransfer.getData('text/plain');
+                                  if (rawData) {
+                                    const parsed = JSON.parse(rawData);
+                                    props.onMoveMemberToSlot?.(parsed.lessonId, parsed.sourceSlotId, slot.id);
+                                  }
+                                } catch (err) {
+                                  console.error('Drop error:', err);
+                                }
                               }
                             : undefined
                         }
                         className={
                           'relative flex-1 rounded-2xl border px-2.5 py-2 transition-all ' +
-                          (isDragOver
-                            ? 'border-dashed border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-sm'
+                          (isDragHover
+                            ? 'border-[#1F6F63] bg-[#1F6F63]/10 ring-2 ring-[#1F6F63]/30 shadow-sm'
                             : isOver
                             ? 'border-[#B5482F] bg-[#B5482F]/5 shadow-2xs'
                             : 'border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]')
@@ -529,10 +532,16 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                 draggable={isAdmin && !props.swapModeActive}
                                 onDragStart={
                                   isAdmin && !props.swapModeActive
-                                    ? (e) => props.onDragStart?.(e, a, slot.id)
+                                    ? (e) => {
+                                        e.stopPropagation();
+                                        e.dataTransfer.setData(
+                                          'text/plain',
+                                          JSON.stringify({ lessonId: a.lessonId, sourceSlotId: slot.id })
+                                        );
+                                        e.dataTransfer.effectAllowed = 'move';
+                                      }
                                     : undefined
                                 }
-                                onDragEnd={isAdmin && !props.swapModeActive ? props.onDragEnd : undefined}
                                 className={
                                   'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
                                   (isAdmin && !props.swapModeActive ? 'cursor-grab active:cursor-grabbing hover:border-[#1C2B33]/40 ' : '') +
@@ -656,15 +665,15 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 하단 변경 내역(히스토리) */}
+          {/* 🎯 하단 변경 내역(히스토리) - 컴팩트 폰트 & 가독성 최적화 */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
-            <div className="mt-4 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-2xs">
-              <div className="mb-2 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1.5">
-                <span className="font-[family-name:var(--font-display)] text-xs font-bold text-[#1C2B33]">
+            <div className="mt-3.5 rounded-2xl border border-[#1C2B33]/10 bg-white p-2.5 shadow-2xs">
+              <div className="mb-1.5 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1">
+                <span className="font-[family-name:var(--font-display)] text-[11px] font-bold text-[#1C2B33]">
                   📋 {props.selectedDate} 레슨 변경 이력
                 </span>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {props.swapHistories.map((h) => {
                   const isSourceCurrent = h.source_date === props.selectedDate;
                   const leftDate = isSourceCurrent ? h.source_date : h.target_date;
@@ -680,11 +689,12 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   return (
                     <div
                       key={h.id}
-                      className="flex items-center justify-between gap-2 rounded-xl bg-[#FAFAF7] px-2.5 py-1.5 text-xs text-[#1C2B33] border border-[#1C2B33]/5"
+                      className="flex items-center justify-between gap-1.5 rounded-lg bg-[#FAFAF7] px-2 py-1 text-[11px] text-[#1C2B33] border border-[#1C2B33]/5"
                     >
-                      <div className="flex items-center gap-1.5 font-medium text-xs overflow-x-auto no-scrollbar whitespace-nowrap min-w-0 pr-1">
+                      {/* 텍스트 영역 (11px 및 타임스탬프 9px로 슬림화) */}
+                      <div className="flex items-center gap-1 font-medium text-[11px] overflow-x-auto no-scrollbar whitespace-nowrap min-w-0 pr-1">
                         {eventTimeStr && (
-                          <span className="font-[family-name:var(--font-mono-club)] text-[10px] font-semibold text-[#1C2B33]/50 bg-[#1C2B33]/5 px-1.5 py-0.5 rounded-md shrink-0">
+                          <span className="font-[family-name:var(--font-mono-club)] text-[9px] font-semibold text-[#1C2B33]/50 bg-[#1C2B33]/5 px-1 py-0.5 rounded shrink-0">
                             {eventTimeStr}
                           </span>
                         )}
@@ -700,10 +710,11 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         <span className="font-bold text-[#1C2B33] shrink-0">{rightName}</span>
                       </div>
 
+                      {/* 🎯 원복 버튼: 콤팩트 크기로 이름 가림 완벽 방어 */}
                       <button
                         type="button"
                         onClick={() => props.onRevertSwapHistory?.(h.id)}
-                        className="inline-flex h-6 shrink-0 items-center rounded-full border border-[#B5482F]/30 bg-white px-2 text-[11px] font-semibold text-[#B5482F] shadow-2xs hover:bg-[#B5482F]/10 active:scale-95 transition-all"
+                        className="inline-flex h-5 shrink-0 items-center rounded-full border border-[#B5482F]/30 bg-white px-1.5 text-[10px] font-semibold text-[#B5482F] shadow-2xs hover:bg-[#B5482F]/10 active:scale-95 transition-all"
                       >
                         ↩ 원복
                       </button>
