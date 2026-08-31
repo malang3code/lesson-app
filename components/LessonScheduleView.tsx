@@ -97,7 +97,7 @@ interface LessonScheduleViewProps {
   onSelectDate: (d: string) => void;
   currentCalYm: string;
   currentYm: string;
-  // 변경(스왑) 모드 (공통: Admin & Viewer)
+  // 변경(스왑) 모드 (공통)
   swapModeActive?: boolean;
   onToggleSwapMode?: () => void;
   onInitiateSwap?: (slot: Slot, item: AssignedItem) => void;
@@ -113,13 +113,17 @@ interface LessonScheduleViewProps {
   onAssign?: (slotId: number, memberId: string) => void;
   onRemove?: (lessonId: number | string) => void;
   onToggleCompleted?: (lessonId: number | string) => void;
-  // 드래그 앤 드롭 (초기 배정 시 관리자 전용 - PC 마우스)
+  // PC 마우스 드래그 앤 드롭 (초기 배정 시 관리자 전용)
   dragOverSlotId?: number | null;
   onDragStart?: (e: React.DragEvent, item: AssignedItem, slotId: number) => void;
   onDragEnd?: () => void;
   onDragOverSlot?: (slotId: number) => void;
   onDragLeaveSlot?: (slotId: number) => void;
   onDropToSlot?: (slotId: number) => void;
+  // 빌드 호환용 옵셔널 props (화면에는 미사용)
+  onTouchStart?: (e: React.TouchEvent, item: AssignedItem, slotId: number) => void;
+  touchPos?: { x: number; y: number } | null;
+  draggedItem?: { memberName: string } | null;
   // 관리자 도구 (복사/비우기)
   copyPanelOpen?: boolean;
   onToggleCopyPanel?: () => void;
@@ -467,7 +471,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                         style={{ marginLeft: '-6px' }}
                       />
 
-                      {/* 슬롯 카드 컨테이너 (관리자 초기 배정 시 드롭 영역 지원) */}
+                      {/* 슬롯 카드 컨테이너 */}
                       <div
                         data-slot-id={slot.id}
                         onDragOver={isAdmin ? (e) => { e.preventDefault(); props.onDragOverSlot?.(slot.id); } : undefined}
@@ -628,7 +632,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 🎯 하단 변경 내역(히스토리) - 관리자/뷰어 공통 */}
+          {/* 🎯 하단 변경 내역(히스토리) */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
             <div className="mt-4 rounded-2xl border border-[#1C2B33]/10 bg-white p-3 shadow-2xs">
               <div className="mb-2 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1.5">
