@@ -185,13 +185,13 @@ export default function AdminAssignPage() {
     if (!loading && isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
       return;
     }
+    setLoading(true); // 💡 날짜 전환 즉시 로딩을 켜서 이전 날짜 데이터 엇박자 렌더링 차단
     setSelectedDate(newDate);
     const [y, m] = newDate.split('-').map(Number);
     setCalYear(y);
     setCalMonth(m);
     setSwapModeActive(false);
   };
-
   // 🎯 [핵심 수정 3] 중간에 setSlots([]) 혼자 비우지 않고, 완료 시 slots와 originalSlots를 동시 동기화
   const loadData = useCallback(async () => {
     if (!selectedDate) {
