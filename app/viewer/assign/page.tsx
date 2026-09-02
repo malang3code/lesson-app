@@ -18,6 +18,7 @@ export default function ViewerAssignPage() {
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
+  const [dataDate, setDataDate] = useState<string | null>(null); // 🎯 현재 슬롯 데이터의 실제 날짜
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
@@ -54,9 +55,13 @@ export default function ViewerAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 훅 연결
+  // 🎯 데이터 준비 완료 판정 (현재 선택된 날짜와 데이터 날짜가 일치하고 로딩 중이 아닐 때)
+  const isDataReady = selectedDate !== null && dataDate === selectedDate && !loading;
+  const emptySlots: Slot[] = useMemo(() => [], []);
+
+  // 🎯 공통 훅 연결 (데이터 준비 전에는 빈 배열 전달하여 isDirty 오류 방어)
   const {
-    isDirty,
+    isDirty: rawIsDirty,
     showSaveBar,
     saving,
     toastMessage,
@@ -65,8 +70,8 @@ export default function ViewerAssignPage() {
     handleRevert,
     handleSave,
   } = useScheduleSaveBar({
-    currentData: slots,
-    originalData: originalSlots,
+    currentData: isDataReady ? slots : emptySlots,
+    originalData: isDataReady ? originalSlots : emptySlots,
     onRevertCallback: () => {
       setSlots(originalSlots);
       setPendingSwap(null);
@@ -124,6 +129,11 @@ export default function ViewerAssignPage() {
     },
   });
 
+  const isDirty = useMemo(() => {
+    if (!isDataReady) return false;
+    return rawIsDirty;
+  }, [isDataReady, rawIsDirty]);
+
   const today = new Date().toISOString().slice(0, 10);
   const currentYm = today.slice(0, 7);
   const currentCalYm = `${calYear}-${String(calMonth).padStart(2, '0')}`;
@@ -173,8 +183,11 @@ export default function ViewerAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
+  // 🎯 [핵심] isDataReady가 참일 때만 isDirty 검사를 수행하여 빠른 연타 시 팝업 발생 차단
   const confirmSwitchDate = (newDate: string) => {
-    if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) return;
+    if (isDataReady && isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
+      return;
+    }
     setSelectedDate(newDate);
     const [y, m] = newDate.split('-').map(Number);
     setCalYear(y);
@@ -186,19 +199,22 @@ export default function ViewerAssignPage() {
     if (!selectedDate) {
       setSlots([]);
       setOriginalSlots([]);
+      setDataDate(null);
       return;
     }
     setLoading(true);
-    setSlots([]);
     try {
-      const res = await fetch('/api/admin/day-data?date=' + selectedDate);
+      const targetDate = selectedDate;
+      const res = await fetch('/api/admin/day-data?date=' + targetDate);
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error || '조회 실패');
         return;
       }
-      setSlots(data.slots ?? []);
-      setOriginalSlots(data.slots ?? []);
+      const newSlots = data.slots ?? [];
+      setSlots(newSlots);
+      setOriginalSlots(newSlots);
+      setDataDate(targetDate);
     } catch {
       showToast('네트워크 오류');
     } finally {
@@ -282,7 +298,6 @@ export default function ViewerAssignPage() {
     showToast(`${swapSourceInfo.memberName} ⟷ ${target.memberName} 맞교환 준비 완료 (하단 저장 클릭)`);
   };
 
-  // 🎯 이력 원복 핸들러
   const handleRevertSwapHistory = async (historyId: number) => {
     if (!confirm('이 변경 건을 원래 일정으로 되돌리시겠습니까?')) return;
     try {
@@ -330,8 +345,8 @@ export default function ViewerAssignPage() {
         mode="viewer"
         drawer={<ViewerDrawer />}
         selectedDate={selectedDate}
-        slots={slots}
-        loading={loading}
+        slots={isDataReady ? slots : []}
+        loading={!isDataReady}
         capturing={capturing}
         toastMessage={toastMessage}
         captureRef={captureRef}
