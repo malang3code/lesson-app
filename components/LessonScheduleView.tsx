@@ -154,7 +154,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
   }, [props.slots]);
 
   return (
-    <div className="min-h-dvh bg-[#FAFAF7] pb-24 text-[#1C2B33] overscroll-y-none">
+    <div className="min-h-dvh bg-[#FAFAF7] pb-8 text-[#1C2B33] overscroll-y-none">
       {/* 🎯 상단 헤더 */}
       <header className="px-4 pt-4 pb-1 sm:px-6 max-w-[580px]">
         <div className="flex items-center gap-3">

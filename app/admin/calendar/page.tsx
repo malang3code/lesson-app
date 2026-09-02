@@ -395,7 +395,7 @@ export default function CalendarAdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] pb-28 text-[#1C2B33]">
+    <div className="min-h-screen bg-[#FAFAF7] pb-8 text-[#1C2B33]">
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-7 pb-5 sm:px-8">
         <div className="flex items-center gap-3">
           <AdminDrawer />
