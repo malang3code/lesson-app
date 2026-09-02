@@ -81,7 +81,8 @@ export default function DashboardPage() {
   }, [data]);
 
   return (
-    <div className="min-h-screen bg-[#FAFAF7] pb-24 text-[#1C2B33]">
+    // 🎯 [수정] 과도했던 pb-24를 깔끔한 pb-8로 축소하여 불필요한 하단 빈 공간 제거
+    <div className="min-h-screen bg-[#FAFAF7] pb-8 text-[#1C2B33]">
       {/* 헤더 영역 */}
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-6 pb-4 sm:px-8">
         <div className="flex items-center gap-3">
@@ -143,7 +144,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 본문 */}
+      {/* 본문 (max-w-lg 규격 일치) */}
       <main className="w-full max-w-lg px-5 py-4 sm:px-8 space-y-4 text-left">
         {loading ? (
           <p className="text-xs text-[#1C2B33]/50">통계 불러오는 중...</p>
@@ -209,7 +210,7 @@ export default function DashboardPage() {
   );
 }
 
-// 🎯 깔끔하게 이름만 나오는 수강생 행 컴포넌트
+// 수강생 행 컴포넌트
 function MemberRow({ member }: { member: MemberStat }) {
   const targetSessionCount = 4;
   const fillWidth = Math.min((member.completedCount / targetSessionCount) * 100, 100);
@@ -226,7 +227,7 @@ function MemberRow({ member }: { member: MemberStat }) {
 
   return (
     <div className="flex items-center gap-2.5 py-1.5 text-xs">
-      {/* 1. 순수 이름만 표기 (화목 뱃지 제거) */}
+      {/* 1. 이름 */}
       <div className="w-14 shrink-0 font-medium text-[#1C2B33]">
         <span className="truncate">{member.name}</span>
       </div>
