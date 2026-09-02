@@ -7,12 +7,13 @@ import AdminDrawer from '@/components/AdminDrawer';
 type MemberStat = {
   id: number;
   name: string;
-  department: string;
+  department?: string;
   lessonDay: string; // TUE, THU, BOTH
   targetCount: number;
   assignedCount: number;
   completedCount: number;
-  attendanceRate: number;
+  absentCount?: number;
+  attendanceRate?: number;
 };
 
 type DashboardData = {
@@ -20,6 +21,8 @@ type DashboardData = {
   totalDates: number;
   tueCount: number;
   thuCount: number;
+  tueAbsentCount: number;
+  thuAbsentCount: number;
   dates: string[];
   members: MemberStat[];
 };
@@ -80,8 +83,17 @@ export default function DashboardPage() {
     return data.members.filter((m) => m.lessonDay === 'THU' || m.lessonDay === 'BOTH');
   }, [data]);
 
+  // 총 목표 회수 (인원수 * 4회) & 총 출석 완료 합계 계산
+  const totalTargetCount = useMemo(() => {
+    return (tueMembers.length + thuMembers.length) * 4;
+  }, [tueMembers, thuMembers]);
+
+  const totalCompletedCount = useMemo(() => {
+    if (!data) return 0;
+    return data.members.reduce((sum, m) => sum + (m.completedCount || 0), 0);
+  }, [data]);
+
   return (
-    // 🎯 [수정] 과도했던 pb-24를 깔끔한 pb-8로 축소하여 불필요한 하단 빈 공간 제거
     <div className="min-h-screen bg-[#FAFAF7] pb-8 text-[#1C2B33]">
       {/* 헤더 영역 */}
       <header className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] px-5 pt-6 pb-4 sm:px-8">
@@ -127,17 +139,19 @@ export default function DashboardPage() {
           {data && (
             <div className="flex flex-wrap items-center gap-1.5 font-[family-name:var(--font-mono-club)] text-xs">
               <span className="flex h-8 items-center rounded-full border border-[#1C2B33]/15 bg-white px-3 text-[#1C2B33]/80 shadow-2xs">
-                <span>총 개설:&nbsp;</span>
-                <strong className="text-[#1C2B33]">{data.totalDates}</strong>
-                <span>&nbsp;/ 8회</span>
+                <span>총:&nbsp;</span>
+                <strong className="text-[#1C2B33]">{totalCompletedCount}</strong>
+                <span>&nbsp;/ {totalTargetCount}회</span>
               </span>
               <span className="flex h-8 items-center rounded-full bg-[#1C2B33]/5 px-3 text-[#1C2B33]/80">
                 <span>화:&nbsp;</span>
-                <strong className="text-[#1C2B33]">{data.tueCount}회</strong>
+                <span>결석&nbsp;</span>
+                <strong className="text-[#1C2B33]">{data.tueAbsentCount ?? 0}회</strong>
               </span>
               <span className="flex h-8 items-center rounded-full bg-[#1C2B33]/5 px-3 text-[#1C2B33]/80">
                 <span>목:&nbsp;</span>
-                <strong className="text-[#1C2B33]">{data.thuCount}회</strong>
+                <span>결석&nbsp;</span>
+                <strong className="text-[#1C2B33]">{data.thuAbsentCount ?? 0}회</strong>
               </span>
             </div>
           )}
@@ -163,9 +177,6 @@ export default function DashboardPage() {
                     {tueMembers.length}명
                   </span>
                 </div>
-                <span className="font-[family-name:var(--font-mono-club)] text-[11px] text-[#1C2B33]/40">
-                  기준: 4회
-                </span>
               </div>
 
               <div className="divide-y divide-[#1C2B33]/5">
@@ -189,9 +200,6 @@ export default function DashboardPage() {
                     {thuMembers.length}명
                   </span>
                 </div>
-                <span className="font-[family-name:var(--font-mono-club)] text-[11px] text-[#1C2B33]/40">
-                  기준: 4회
-                </span>
               </div>
 
               <div className="divide-y divide-[#1C2B33]/5">
@@ -213,7 +221,12 @@ export default function DashboardPage() {
 // 수강생 행 컴포넌트
 function MemberRow({ member }: { member: MemberStat }) {
   const targetSessionCount = 4;
-  const fillWidth = Math.min((member.completedCount / targetSessionCount) * 100, 100);
+  const completed = member.completedCount || 0;
+  const absent = member.absentCount || 0;
+
+  // 비율 계산: 결석(빨강) 먼저 채우고, 출석(초록)을 채움 (합계 최대 100%)
+  const absentWidth = Math.min((absent / targetSessionCount) * 100, 100);
+  const completedWidth = Math.min((completed / targetSessionCount) * 100, 100 - absentWidth);
 
   const getBarColor = (count: number) => {
     if (count >= 4) return 'bg-[#1F6F63]'; // 4회: 시그니처 에메랄드
@@ -223,7 +236,7 @@ function MemberRow({ member }: { member: MemberStat }) {
     return 'bg-transparent';
   };
 
-  const barColor = getBarColor(member.completedCount);
+  const barColor = getBarColor(completed);
 
   return (
     <div className="flex items-center gap-2.5 py-1.5 text-xs">
@@ -232,20 +245,35 @@ function MemberRow({ member }: { member: MemberStat }) {
         <span className="truncate">{member.name}</span>
       </div>
 
-      {/* 2. 가로 프로그레스 바 */}
-      <div className="relative flex-1">
-        <div className="h-2 w-full overflow-hidden rounded-full bg-[#1C2B33]/10">
-          <div
-            className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-            style={{ width: `${fillWidth}%` }}
-          />
+      {/* 2. 가로 프로그레스 바 (결석 왼쪽 정렬 + 결석 영역 내 중앙 텍스트) */}
+      <div className="relative flex-1 flex items-center">
+        <div className="relative h-3 w-full overflow-hidden rounded-full bg-[#1C2B33]/10 flex">
+          {/* ① 결석 구간 (왼쪽 우선 배치 & 빨간색 블록 내 정중앙 텍스트) */}
+          {absentWidth > 0 && (
+            <div
+              className="relative h-full bg-rose-500/85 transition-all duration-300 flex items-center justify-center overflow-hidden"
+              style={{ width: `${absentWidth}%` }}
+            >
+              <span className="whitespace-nowrap px-1 text-[9px] font-medium text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
+                {absentWidth >= 40 ? `결석 ${absent}회` : `결석 ${absent}회`}
+              </span>
+            </div>
+          )}
+
+          {/* ② 출석 완료 구간 (결석 바로 뒤에 연결) */}
+          {completedWidth > 0 && (
+            <div
+              className={`h-full transition-all duration-300 ${barColor}`}
+              style={{ width: `${completedWidth}%` }}
+            />
+          )}
         </div>
       </div>
 
-      {/* 3. ?/4회 수치 */}
+      {/* 3. ?/4회 수치 (너비 w-14 고정) */}
       <div className="w-14 shrink-0 text-right font-[family-name:var(--font-mono-club)] text-xs">
-        <strong className={member.completedCount >= 4 ? 'text-[#1F6F63]' : 'text-[#1C2B33]'}>
-          {member.completedCount}
+        <strong className={completed >= 4 ? 'text-[#1F6F63]' : 'text-[#1C2B33]'}>
+          {completed}
         </strong>
         <span className="text-[#1C2B33]/40"> / 4회</span>
       </div>
