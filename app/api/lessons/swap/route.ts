@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       .from('lesson_swap_histories')
       .select('*')
       .or(`source_date.eq.${date},target_date.eq.${date}`)
-      .order('created_at', { ascending: true }); // 👈 처음 생성된 건이 맨 위로
+      .order('created_at', { ascending: true });
 
     if (error) throw error;
 
@@ -43,20 +43,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '교환 대상 정보가 올바르지 않습니다.' }, { status: 400 });
     }
 
-    // 1) A의 기존 배정 조회
+    // 1) A의 기존 배정 조회 (중복 배정된 경우에도 안전하게 1건 선택)
     const { data: sourceAssigned, error: sErr } = await supabaseAdmin
       .from('lessons')
       .select('id, is_completed')
       .eq('lesson_date', source.lessonDate)
       .eq('time_slot_id', source.timeSlotId)
       .eq('member_id', source.memberId)
+      .limit(1)
       .maybeSingle();
 
     if (sErr || !sourceAssigned) {
       return NextResponse.json({ error: '원본 수강생의 배정 정보를 찾을 수 없습니다.' }, { status: 404 });
     }
 
-    // 2) B의 기존 배정 조회
+    // 2) B의 기존 배정 조회 (중복 배정된 경우에도 안전하게 1건 선택)
     let targetAssignedId: number | null = null;
     if (target.memberId) {
       const { data: targetAssigned, error: tErr } = await supabaseAdmin
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
         .eq('lesson_date', target.lessonDate)
         .eq('time_slot_id', target.timeSlotId)
         .eq('member_id', target.memberId)
+        .limit(1)
         .maybeSingle();
 
       if (tErr || !targetAssigned) {
@@ -185,7 +187,7 @@ export async function DELETE(req: NextRequest) {
       aQuery.eq('time_slot_id', origTargetSlotId);
     }
 
-    const { data: currentALesson } = await aQuery.maybeSingle();
+    const { data: currentALesson } = await aQuery.limit(1).maybeSingle();
 
     if (!currentALesson) {
       return NextResponse.json(
@@ -203,6 +205,7 @@ export async function DELETE(req: NextRequest) {
         .eq('lesson_date', hist.source_date)
         .eq('time_slot_id', origSourceSlotId)
         .eq('member_id', hist.target_member_id)
+        .limit(1)
         .maybeSingle();
 
       if (!currentBLesson) {
