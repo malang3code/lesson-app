@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 2. 해당 기수 레슨일들에 배정된 lessons 데이터 조회 (is_swap, is_completed 포함)
+    // 2. 해당 기수 레슨일들에 배정된 lessons 데이터 조회
     const { data: lessonData, error: lErr } = await supabaseAdmin
       .from('lessons')
       .select('member_id, lesson_date, is_completed, is_swap')
@@ -63,10 +63,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 3. 해당 기수 레슨에 실제로 배정된 회원 ID 목록만 추출
+    // 3. 해당 기수 레슨에 실제로 배정된 회원 ID 목록 추출
     const activeMemberIds = Array.from(new Set(lessons.map((l) => l.member_id)));
 
-    // 4. 배정된 회원 정보 조회 (이름 가나다순 정렬)
+    // 4. 배정된 회원 기본 정보 조회 (이름 가나다순)
     const { data: members, error: memErr } = await supabaseAdmin
       .from('members')
       .select('id, name')
@@ -75,48 +75,50 @@ export async function GET(req: NextRequest) {
 
     if (memErr) throw memErr;
 
-    // 5. 회원별 소속 세션(화/목) 판별 및 출석 집계
+    // 5. 해당 기수 레슨 배정 데이터를 기반으로 회원별 본래 요일 복원 및 출석 집계
     const memberStats = (members || []).map((m) => {
       const myLessons = lessons.filter((l) => l.member_id === m.id);
 
-      // 🎯 [스왑 꼬리표 없는 정규 배정] 날짜의 요일 검사
+      // 스왑이 아닌 정규 배정 레슨 우선 확인
       const regularLessons = myLessons.filter((l) => !l.is_swap);
+      const targetLessons = regularLessons.length > 0 ? regularLessons : myLessons;
 
-      let hasRegularTue = false;
-      let hasRegularThu = false;
+      let tueLessonCount = 0;
+      let thuLessonCount = 0;
 
-      regularLessons.forEach((l) => {
+      targetLessons.forEach((l) => {
         const [y, mon, d] = l.lesson_date.split('-').map(Number);
         const dow = new Date(y, mon - 1, d).getDay();
-        if (dow === 2) hasRegularTue = true;
-        if (dow === 4) hasRegularThu = true;
+        if (dow === 2) tueLessonCount++;
+        if (dow === 4) thuLessonCount++;
       });
 
-      // 소속 요일 확정 (정규 배정 요일 기준)
-      let resolvedLessonDay = 'TUE';
-      if (hasRegularTue && hasRegularThu) {
-        resolvedLessonDay = 'BOTH';
-      } else if (hasRegularThu) {
-        resolvedLessonDay = 'THU';
-      } else if (hasRegularTue) {
-        resolvedLessonDay = 'TUE';
-      } else {
-        // 만약 모든 수업이 스왑으로 배정된 특수 케이스면 첫 번째 배정 요일 채택
-        const first = myLessons[0];
-        if (first) {
-          const [y, mon, d] = first.lesson_date.split('-').map(Number);
-          resolvedLessonDay = new Date(y, mon - 1, d).getDay() === 4 ? 'THU' : 'TUE';
+      // 🎯 [핵심] 요일 판정 로직:
+      // 둘 다 수업이 있더라도 더 많이 배정된 요일을 본래 세션으로 확정 (교차 배정으로 인한 BOTH 오염 방지)
+      let resolvedLessonDay: 'TUE' | 'THU' | 'BOTH' = 'TUE';
+
+      if (tueLessonCount > 0 && thuLessonCount > 0) {
+        // 화/목 양쪽 모두 최소 3회 이상(총 6회 이상 정규 주2회인 경우)만 BOTH로 인정
+        if (tueLessonCount >= 3 && thuLessonCount >= 3) {
+          resolvedLessonDay = 'BOTH';
+        } else {
+          // 어느 한쪽이 1~2회 섞여 들어간 것은 교차/보강 배정이므로 횟수가 더 많은 쪽을 본래 요일로 확정
+          resolvedLessonDay = tueLessonCount >= thuLessonCount ? 'TUE' : 'THU';
         }
+      } else if (thuLessonCount > 0) {
+        resolvedLessonDay = 'THU';
+      } else {
+        resolvedLessonDay = 'TUE';
       }
 
-      // 출석 완료 횟수 (스왑 다녀온 수업 포함 총 출석)
+      // 출석 완료 횟수 (스왑/교차 수업 포함 총 출석)
       const completedCount = myLessons.filter((l) => l.is_completed).length;
 
       return {
         id: m.id,
         name: m.name,
-        lessonDay: resolvedLessonDay, // 이번 달 정규 세션 (TUE, THU, BOTH)
-        targetCount: 4,               // 기준 4회
+        lessonDay: resolvedLessonDay, // 과거 시점 배정 데이터 기반으로 완벽 복원된 요일
+        targetCount: resolvedLessonDay === 'BOTH' ? 8 : 4,
         assignedCount: myLessons.length,
         completedCount,
       };
