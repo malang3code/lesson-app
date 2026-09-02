@@ -155,8 +155,8 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
 
   return (
     <div className="min-h-dvh bg-[#FAFAF7] pb-8 text-[#1C2B33] overscroll-y-none">
-      {/* 🎯 상단 헤더 */}
-      <header className="px-4 pt-4 pb-1 sm:px-6 max-w-[580px]">
+      {/* 🎯 상단 헤더: max-w-lg (512px) */}
+      <header className="w-full max-w-lg px-4 pt-4 pb-1 sm:px-6">
         <div className="flex items-center gap-3">
           {props.drawer}
           <h1 className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight text-[#1C2B33] sm:text-2xl">
@@ -361,8 +361,8 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
         )}
       </header>
 
-      {/* 🎯 본문 시간표 영역 */}
-      <main className="px-4 pt-1.5 pb-4 sm:px-6 w-full max-w-[580px]">
+      {/* 🎯 본문 시간표 영역: max-w-lg (512px) */}
+      <main className="w-full max-w-lg px-4 pt-1.5 pb-4 sm:px-6">
         <div ref={props.captureRef} className="relative w-full bg-[#FAFAF7] p-2 sm:p-3 rounded-2xl">
           {/* 날짜 헤더 & 출석 현황 & [🔄 변경] 버튼 */}
           {props.selectedDate && (
@@ -408,6 +408,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             <div className="absolute top-3.5 bottom-3.5 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[60px]" />
 
             <div className="space-y-2">
+              {/* 🎯 로딩 중일 때는 잔상 슬롯을 절대 렌더링하지 않음 */}
               {props.loading ? (
                 <div className="py-12 text-center text-sm font-medium text-[#1C2B33]/40 animate-pulse">
                   시간표 불러오는 중...
@@ -457,7 +458,10 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                           {assignedList.map((a) => {
                             const isCompleted = !!a.isCompleted;
                             const memDay = a.lesson_day || 'TUE';
+                            
+                            // 🎯 [핵심 방어] 로딩 중이 아닐 때만 교차 요일 뱃지 계산
                             const isCrossDay =
+                              !props.loading &&
                               memDay !== 'BOTH' &&
                               ((currentSelectedDow === 2 && memDay === 'THU') ||
                                 (currentSelectedDow === 4 && memDay === 'TUE'));
@@ -583,7 +587,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             </div>
           </div>
 
-          {/* 🎯 하단 변경 내역(히스토리) */}
+          {/* 하단 변경 내역(히스토리) */}
           {props.swapHistories && props.swapHistories.length > 0 && props.selectedDate && (
             <div className="mt-3.5 rounded-2xl border border-[#1C2B33]/10 bg-white p-2.5 shadow-2xs">
               <div className="mb-1.5 flex items-center justify-between border-b border-[#1C2B33]/10 pb-1">
@@ -643,9 +647,9 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
         </div>
       </main>
 
-      {/* 🎯 하단 플로팅 저장 바 */}
+      {/* 🎯 하단 플로팅 저장 바: max-w-lg (512px) */}
       {props.showSaveBar && props.isDirty && (
-        <div className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <div className="min-w-0 flex-1 truncate">
             <span className="truncate text-xs text-white/80 whitespace-nowrap block">
               수정된 내용이 있습니다
