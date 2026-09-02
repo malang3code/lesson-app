@@ -19,6 +19,7 @@ export default function AdminAssignPage() {
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
+  const [dataDate, setDataDate] = useState<string | null>(null); // 🎯 현재 슬롯 데이터의 실제 날짜
   const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
   const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -40,7 +41,7 @@ export default function AdminAssignPage() {
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
 
-  // 해당 날짜 스왑 이력 로드
+  // 🎯 해당 날짜 스왑 이력 로드
   const loadSwapHistories = useCallback(async (date: string | null) => {
     if (!date) {
       setSwapHistories([]);
@@ -61,7 +62,7 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 공통 저장 바 훅 연결
+  // 🎯 공통 저장 바 훅 연결
   const {
     isDirty: rawIsDirty,
     showSaveBar,
@@ -125,11 +126,12 @@ export default function AdminAssignPage() {
     },
   });
 
-  // 🎯 [핵심 수정 1] 로딩 중이거나 아직 슬롯이 로드되지 않았을 때는 isDirty를 무조건 false로 방어
+  // 🎯 [방어 1] 현재 데이터가 선택된 날짜와 일치하지 않거나 로딩 중이면 isDirty는 무조건 false
+  const isDataReady = selectedDate !== null && dataDate === selectedDate && !loading;
   const isDirty = useMemo(() => {
-    if (loading) return false;
+    if (!isDataReady) return false;
     return rawIsDirty;
-  }, [loading, rawIsDirty]);
+  }, [isDataReady, rawIsDirty]);
 
   const today = new Date().toISOString().slice(0, 10);
   const currentYm = today.slice(0, 7);
@@ -180,37 +182,36 @@ export default function AdminAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
-  // 🎯 [핵심 수정 2] 로딩 중이 아닐 때만 실제 isDirty 여부로 컨펌창 노출
+  // 🎯 [방어 2] 날짜 전환 시 확인 팝업 (실제 데이터가 준비되어 있고 dirty일 때만)
   const confirmSwitchDate = (newDate: string) => {
-    if (!loading && isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
-      return;
-    }
-    setLoading(true); // 💡 날짜 전환 즉시 로딩을 켜서 이전 날짜 데이터 엇박자 렌더링 차단
+    if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) return;
     setSelectedDate(newDate);
     const [y, m] = newDate.split('-').map(Number);
     setCalYear(y);
     setCalMonth(m);
     setSwapModeActive(false);
   };
-  // 🎯 [핵심 수정 3] 중간에 setSlots([]) 혼자 비우지 않고, 완료 시 slots와 originalSlots를 동시 동기화
+
+  // 🎯 [방어 3] 데이터 로드 시 동기화 (dataDate를 통해 날짜 일치 여부 보장)
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
       setOriginalSlots([]);
+      setDataDate(null);
       setEligibleMembers([]);
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/day-data?date=' + selectedDate);
+      const targetDate = selectedDate;
+      const res = await fetch('/api/admin/day-data?date=' + targetDate);
       const data = await res.json();
-      if (!res.ok) {
-        showToast(data.error || '조회 실패');
-        return;
-      }
-      const fetchedSlots = data.slots ?? [];
-      setSlots(fetchedSlots);
-      setOriginalSlots(fetchedSlots);
+      if (!res.ok) { showToast(data.error || '조회 실패'); return; }
+      
+      const newSlots = data.slots ?? [];
+      setSlots(newSlots);
+      setOriginalSlots(newSlots);
+      setDataDate(targetDate); // 💡 서버에서 온 데이터의 날짜 기록
       setEligibleMembers(data.eligibleMembers ?? []);
     } catch {
       showToast('네트워크 오류');
@@ -219,9 +220,7 @@ export default function AdminAssignPage() {
     }
   }, [selectedDate, showToast]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const handleAssign = (slotId: number, memberIdStr: string) => {
     const memberId = Number(memberIdStr);
@@ -401,8 +400,8 @@ export default function AdminAssignPage() {
         mode="admin"
         drawer={<AdminDrawer />}
         selectedDate={selectedDate}
-        slots={slots}
-        loading={loading}
+        slots={isDataReady ? slots : []} // 🎯 선택된 날짜와 일치하지 않는 슬롯 잔상은 절대 자식에게 넘기지 않음
+        loading={!isDataReady} // 🎯 날짜가 불일치하면 항상 로딩 상태로 렌더링
         capturing={capturing}
         toastMessage={toastMessage}
         captureRef={captureRef}
