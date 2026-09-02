@@ -40,7 +40,7 @@ export default function AdminAssignPage() {
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
 
-  // 🎯 해당 날짜 스왑 이력 로드
+  // 해당 날짜 스왑 이력 로드
   const loadSwapHistories = useCallback(async (date: string | null) => {
     if (!date) {
       setSwapHistories([]);
@@ -61,9 +61,9 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 저장 바 훅 연결
+  // 공통 저장 바 훅 연결
   const {
-    isDirty,
+    isDirty: rawIsDirty,
     showSaveBar,
     saving,
     toastMessage,
@@ -125,6 +125,12 @@ export default function AdminAssignPage() {
     },
   });
 
+  // 🎯 [핵심 수정 1] 로딩 중이거나 아직 슬롯이 로드되지 않았을 때는 isDirty를 무조건 false로 방어
+  const isDirty = useMemo(() => {
+    if (loading) return false;
+    return rawIsDirty;
+  }, [loading, rawIsDirty]);
+
   const today = new Date().toISOString().slice(0, 10);
   const currentYm = today.slice(0, 7);
   const currentCalYm = `${calYear}-${String(calMonth).padStart(2, '0')}`;
@@ -174,8 +180,11 @@ export default function AdminAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
+  // 🎯 [핵심 수정 2] 로딩 중이 아닐 때만 실제 isDirty 여부로 컨펌창 노출
   const confirmSwitchDate = (newDate: string) => {
-    if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) return;
+    if (!loading && isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
+      return;
+    }
     setSelectedDate(newDate);
     const [y, m] = newDate.split('-').map(Number);
     setCalYear(y);
@@ -183,6 +192,7 @@ export default function AdminAssignPage() {
     setSwapModeActive(false);
   };
 
+  // 🎯 [핵심 수정 3] 중간에 setSlots([]) 혼자 비우지 않고, 완료 시 slots와 originalSlots를 동시 동기화
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
@@ -191,13 +201,16 @@ export default function AdminAssignPage() {
       return;
     }
     setLoading(true);
-    setSlots([]);
     try {
       const res = await fetch('/api/admin/day-data?date=' + selectedDate);
       const data = await res.json();
-      if (!res.ok) { showToast(data.error || '조회 실패'); return; }
-      setSlots(data.slots ?? []);
-      setOriginalSlots(data.slots ?? []);
+      if (!res.ok) {
+        showToast(data.error || '조회 실패');
+        return;
+      }
+      const fetchedSlots = data.slots ?? [];
+      setSlots(fetchedSlots);
+      setOriginalSlots(fetchedSlots);
       setEligibleMembers(data.eligibleMembers ?? []);
     } catch {
       showToast('네트워크 오류');
@@ -206,7 +219,9 @@ export default function AdminAssignPage() {
     }
   }, [selectedDate, showToast]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleAssign = (slotId: number, memberIdStr: string) => {
     const memberId = Number(memberIdStr);
