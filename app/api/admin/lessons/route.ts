@@ -47,6 +47,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '해당 시간대의 정원이 마감되었습니다.' }, { status: 400 });
     }
 
+    // 🎯 [is_swap 자동 판별]: 회원의 소속 요일과 배정 날짜의 요일 대조
+    const { data: member } = await supabaseAdmin
+      .from('members')
+      .select('lesson_day')
+      .eq('id', memberId)
+      .single();
+
+    const [y, m, d] = lessonDate.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay(); // 2: 화요일, 4: 목요일
+    const memberDay = member?.lesson_day;
+
+    let isSwap = false;
+    if (dow === 2 && memberDay === 'THU') {
+      isSwap = true; // 목요일 회원이 화요일에 배정됨
+    } else if (dow === 4 && memberDay === 'TUE') {
+      isSwap = true; // 화요일 회원이 목요일에 배정됨
+    }
+
     const { data, error } = await supabaseAdmin
       .from('lessons')
       .insert({
@@ -54,6 +72,7 @@ export async function POST(req: NextRequest) {
         time_slot_id: timeSlotId,
         member_id: memberId,
         is_completed: false,
+        is_swap: isSwap,
       })
       .select()
       .single();
