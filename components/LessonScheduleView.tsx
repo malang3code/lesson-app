@@ -458,7 +458,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                           {assignedList.map((a) => {
                             const isCompleted = !!a.isCompleted;
                             const memDay = a.lesson_day || 'TUE';
-                            
+
                             // 🎯 [핵심 방어] 로딩 중이 아닐 때만 교차 요일 뱃지 계산
                             const isCrossDay =
                               !props.loading &&
@@ -470,16 +470,21 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                               <div
                                 key={a.lessonId}
                                 className={
-                                  'group inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
+                                  'group relative inline-flex h-[32px] shrink-0 items-center justify-between gap-1.5 rounded-full border px-2.5 text-sm transition-all select-none ' +
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
                                     : isCompleted
-                                    ? 'bg-[#E8F3EE] text-[#1F6F63] border-[#1F6F63]/30'
+                                    ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] font-semibold ring-1 ring-[#1F6F63]/30 shadow-xs' // 🎯 [핵심 수정] 출석 완료 시 시그니처 초록 테두리 & 링 적용
                                     : isCrossDay
                                     ? 'bg-[#FFF8E7] text-[#C98A2B] border-[#C98A2B]/40 font-medium'
                                     : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                                 }
                               >
+                                {/* 🎯 출석 완료 시 좌측 초록 체크 표시 */}
+                                {isCompleted && !props.swapModeActive && (
+                                  <span className="text-xs font-bold text-[#1F6F63]">✓</span>
+                                )}
+
                                 <span
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -494,7 +499,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                     (props.swapModeActive
                                       ? 'text-[#1F6F63] font-bold'
                                       : isCompleted
-                                      ? 'line-through text-[#1F6F63]'
+                                      ? 'text-[#1F6F63] font-bold' // 🎯 초록 텍스트 유지
                                       : isCrossDay
                                       ? 'text-[#A06C18]'
                                       : 'text-[#1C2B33]')
@@ -506,7 +511,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                 </span>
 
                                 {isAdmin && props.showDetailInfo && (
-                                  <span className={'pointer-events-none whitespace-nowrap text-xs ' + (isCompleted ? 'text-[#1F6F63]/60' : 'text-[#1C2B33]/40')}>
+                                  <span className={'pointer-events-none whitespace-nowrap text-xs ' + (isCompleted ? 'text-[#1F6F63]/70' : 'text-[#1C2B33]/40')}>
                                     {displayPhone(a.phone)} {a.department ?? '-'}
                                   </span>
                                 )}

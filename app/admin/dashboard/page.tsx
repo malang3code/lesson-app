@@ -14,6 +14,10 @@ type MemberStat = {
   completedCount: number;
   absentCount?: number;
   attendanceRate?: number;
+  tueCompletedCount?: number;
+  tueAbsentCount?: number;
+  thuCompletedCount?: number;
+  thuAbsentCount?: number;
 };
 
 type DashboardData = {
@@ -38,7 +42,9 @@ export default function DashboardPage() {
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/dashboard?term=${termMonthStr}`);
+      const res = await fetch(`/api/admin/dashboard?term=${termMonthStr}`, {
+        cache: 'no-store',
+      });
       const json = await res.json();
       if (res.ok) {
         setData(json);
@@ -158,7 +164,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 본문 (max-w-lg 규격 일치) */}
+      {/* 본문 */}
       <main className="w-full max-w-lg px-5 py-4 sm:px-8 space-y-4 text-left">
         {loading ? (
           <p className="text-xs text-[#1C2B33]/50">통계 불러오는 중...</p>
@@ -181,7 +187,7 @@ export default function DashboardPage() {
 
               <div className="divide-y divide-[#1C2B33]/5">
                 {tueMembers.map((m) => (
-                  <MemberRow key={m.id} member={m} />
+                  <MemberRow key={`tue-${m.id}`} member={m} sessionType="TUE" />
                 ))}
                 {tueMembers.length === 0 && (
                   <p className="py-4 text-center text-xs text-[#1C2B33]/40">수강생이 없습니다.</p>
@@ -204,7 +210,7 @@ export default function DashboardPage() {
 
               <div className="divide-y divide-[#1C2B33]/5">
                 {thuMembers.map((m) => (
-                  <MemberRow key={m.id} member={m} />
+                  <MemberRow key={`thu-${m.id}`} member={m} sessionType="THU" />
                 ))}
                 {thuMembers.length === 0 && (
                   <p className="py-4 text-center text-xs text-[#1C2B33]/40">수강생이 없습니다.</p>
@@ -219,20 +225,28 @@ export default function DashboardPage() {
 }
 
 // 수강생 행 컴포넌트
-function MemberRow({ member }: { member: MemberStat }) {
+function MemberRow({ member, sessionType }: { member: MemberStat; sessionType: 'TUE' | 'THU' }) {
   const targetSessionCount = 4;
-  const completed = member.completedCount || 0;
-  const absent = member.absentCount || 0;
 
-  // 비율 계산: 결석(빨강) 먼저 채우고, 출석(초록)을 채움 (합계 최대 100%)
+  // BOTH 회원은 요일별 분리 필드 적용, 단일 요일 회원은 기본값 적용
+  const isBoth = member.lessonDay === 'BOTH';
+  const completed = isBoth
+    ? (sessionType === 'TUE' ? (member.tueCompletedCount ?? 0) : (member.thuCompletedCount ?? 0))
+    : (member.completedCount || 0);
+
+  const absent = isBoth
+    ? (sessionType === 'TUE' ? (member.tueAbsentCount ?? 0) : (member.thuAbsentCount ?? 0))
+    : (member.absentCount || 0);
+
+  // 비율 계산
   const absentWidth = Math.min((absent / targetSessionCount) * 100, 100);
   const completedWidth = Math.min((completed / targetSessionCount) * 100, 100 - absentWidth);
 
   const getBarColor = (count: number) => {
-    if (count >= 4) return 'bg-[#1F6F63]'; // 4회: 시그니처 에메랄드
-    if (count === 3) return 'bg-[#1F6F63]/80'; // 3회: 딥 에메랄드
-    if (count === 2) return 'bg-[#1F6F63]/55'; // 2회: 미디엄 세이지
-    if (count === 1) return 'bg-[#1F6F63]/35'; // 1회: 소프트 세이지
+    if (count >= 4) return 'bg-[#1F6F63]';
+    if (count === 3) return 'bg-[#1F6F63]/80';
+    if (count === 2) return 'bg-[#1F6F63]/55';
+    if (count === 1) return 'bg-[#1F6F63]/35';
     return 'bg-transparent';
   };
 
@@ -245,10 +259,10 @@ function MemberRow({ member }: { member: MemberStat }) {
         <span className="truncate">{member.name}</span>
       </div>
 
-      {/* 2. 가로 프로그레스 바 (결석 왼쪽 정렬 + 결석 영역 내 중앙 텍스트) */}
+      {/* 2. 가로 프로그레스 바 */}
       <div className="relative flex-1 flex items-center">
         <div className="relative h-3 w-full overflow-hidden rounded-full bg-[#1C2B33]/10 flex">
-          {/* ① 결석 구간 (왼쪽 우선 배치 & 빨간색 블록 내 정중앙 텍스트) */}
+          {/* ① 결석 구간 */}
           {absentWidth > 0 && (
             <div
               className="relative h-full bg-rose-500/85 transition-all duration-300 flex items-center justify-center overflow-hidden"
@@ -260,7 +274,7 @@ function MemberRow({ member }: { member: MemberStat }) {
             </div>
           )}
 
-          {/* ② 출석 완료 구간 (결석 바로 뒤에 연결) */}
+          {/* ② 출석 완료 구간 */}
           {completedWidth > 0 && (
             <div
               className={`h-full transition-all duration-300 ${barColor}`}
@@ -270,7 +284,7 @@ function MemberRow({ member }: { member: MemberStat }) {
         </div>
       </div>
 
-      {/* 3. ?/4회 수치 (너비 w-14 고정) */}
+      {/* 3. ?/4회 수치 */}
       <div className="w-14 shrink-0 text-right font-[family-name:var(--font-mono-club)] text-xs">
         <strong className={completed >= 4 ? 'text-[#1F6F63]' : 'text-[#1C2B33]'}>
           {completed}

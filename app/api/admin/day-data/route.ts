@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+export const dynamic = 'force-dynamic';
 
 function buildDisplayName(
   member: { id: number; name: string; employee_no: string | null },
