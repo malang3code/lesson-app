@@ -54,7 +54,9 @@ export async function GET(req: NextRequest) {
     if (lErr) throw lErr;
     const lessons = lessonData || [];
 
-    const today = new Date().toISOString().slice(0, 10);
+    // 🎯 한국 시간(Asia/Seoul) 기준 오늘 날짜(YYYY-MM-DD) 추출
+    // UTC 기준 시 아침 9시까지 전날로 잡히던 문제를 해결하여 자정 직후 즉시 반영
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
     let tueAbsentCount = 0;
     let thuAbsentCount = 0;
 
@@ -129,7 +131,7 @@ export async function GET(req: NextRequest) {
       let thuAbsentCountIndiv = 0;
 
       if (resolvedLessonDay === 'BOTH') {
-        // 🎯 [핵심] BOTH 회원은 날짜순으로 인덱스를 따라 퐁당퐁당 분배
+        // 🎯 BOTH 회원은 날짜순으로 인덱스를 따라 퐁당퐁당 분배
         // index 0, 2, 4, 6 -> 화요일 세션 슬롯
         // index 1, 3, 5, 7 -> 목요일 세션 슬롯
         myLessons.forEach((l, idx) => {
