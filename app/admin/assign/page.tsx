@@ -211,7 +211,7 @@ export default function AdminAssignPage() {
       const newSlots = data.slots ?? [];
       setSlots(newSlots);
       setOriginalSlots(newSlots);
-      setDataDate(targetDate); // 💡 서버에서 온 데이터의 날짜 기록
+      setDataDate(targetDate);
       setEligibleMembers(data.eligibleMembers ?? []);
     } catch {
       showToast('네트워크 오류');
@@ -352,7 +352,21 @@ export default function AdminAssignPage() {
     setCapturing(true);
     showToast('이미지 생성 중...');
     try {
-      const dataUrl = await toPng(captureRef.current, { cacheBust: true, pixelRatio: 2, backgroundColor: '#FAFAF7' });
+      // 🎯 filter 옵션: '변경' 버튼과 '원복' 버튼은 캡처 이미지에서만 완벽히 제외
+      const dataUrl = await toPng(captureRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#FAFAF7',
+        filter: (node: HTMLElement) => {
+          if (node.tagName === 'BUTTON') {
+            const text = node.textContent?.trim() || '';
+            if (text.includes('변경') || text.includes('원복')) {
+              return false;
+            }
+          }
+          return true;
+        },
+      });
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const file = new File([blob], `lesson-${selectedDate}.png`, { type: 'image/png' });
@@ -400,8 +414,8 @@ export default function AdminAssignPage() {
         mode="admin"
         drawer={<AdminDrawer />}
         selectedDate={selectedDate}
-        slots={isDataReady ? slots : []} // 🎯 선택된 날짜와 일치하지 않는 슬롯 잔상은 절대 자식에게 넘기지 않음
-        loading={!isDataReady} // 🎯 날짜가 불일치하면 항상 로딩 상태로 렌더링
+        slots={isDataReady ? slots : []}
+        loading={!isDataReady}
         capturing={capturing}
         toastMessage={toastMessage}
         captureRef={captureRef}

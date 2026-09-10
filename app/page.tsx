@@ -53,7 +53,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight text-[#1C2B33]">
-            레슨 관리 시스템
+            SBL 콕카인 레슨
           </h1>
           <p className="mt-1 text-xs font-medium text-[#1C2B33]/50">비밀번호를 입력하여 접속하세요</p>
         </div>
