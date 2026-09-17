@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 
 type PreferredDay = 'TUE_ONLY' | 'THU_ONLY' | 'ANY' | 'TUE' | 'THU' | 'BOTH';
 type LessonDay = 'TUE' | 'THU' | 'BOTH';
@@ -17,9 +18,8 @@ interface Application {
   preferred_time_2: string | null;
   notes: string | null;
   status: string; // 'ON' | 'OFF'
-  lesson_day?: LessonDay; // DB에 저장된 확정 요일
+  lesson_day?: LessonDay;
   created_at?: string;
-  // UI 편집용 확장 필드
   editStatus?: string;
   editLessonDay?: LessonDay;
 }
@@ -45,10 +45,38 @@ function getDayBadge(day: PreferredDay) {
   return { label: '화요일', bg: 'bg-[#1C2B33]/10 text-[#1C2B33]' };
 }
 
+// 'YYYY-MM' 형식의 문자열에 N개월을 더하거나 빼는 유틸 함수
+function addMonths(dateStr: string, months: number): string {
+  const [year, month] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1 + months, 1);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+// 오늘 기준 기본 3달(과거 1개월, 이번 달, 미래 1개월) 구하기
+function getDefaultTargetTerms(): string[] {
+  const now = new Date();
+  const currentY = now.getFullYear();
+  const currentM = String(now.getMonth() + 1).padStart(2, '0');
+  const currentTerm = `${currentY}-${currentM}`;
+
+  return [
+    addMonths(currentTerm, -1), // 과거 1개월
+    currentTerm,                // 이번 달
+    addMonths(currentTerm, 1),  // 미래 1개월 (+1달)
+  ];
+}
+
 export default function ApplicationsSettingsPage() {
+  const router = useRouter();
   const [applications, setApplications] = useState<Application[]>([]);
   const [originalApplications, setOriginalApplications] = useState<Application[]>([]);
-  const [selectedTerm, setSelectedTerm] = useState<string>('ALL');
+  
+  // 기본 선택은 이번 달로 설정
+  const defaultTerms = useMemo(() => getDefaultTargetTerms(), []);
+  const [selectedTerm, setSelectedTerm] = useState<string>(defaultTerms[1]); // 이번 달 기본 선택
+  
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -63,21 +91,36 @@ export default function ApplicationsSettingsPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
+  // DB에 존재하는 모든 고유 기수 목록 추출
+  const availableTermsInDb = useMemo(() => {
+    const set = new Set<string>();
+    defaultTerms.forEach(t => set.add(t));
+    originalApplications.forEach((a) => {
+      if (a.term_month) set.add(a.term_month);
+    });
+    return Array.from(set).sort().reverse();
+  }, [originalApplications, defaultTerms]);
+
+  // 상단 버튼 3개 (과거 1달, 이번달, 미래 1달)
+  const quickTerms = useMemo(() => {
+    return defaultTerms;
+  }, [defaultTerms]);
+
+  // 과거보기 드롭다운에 들어갈 기수들
+  const olderTerms = useMemo(() => {
+    return availableTermsInDb.filter((t) => !quickTerms.includes(t));
+  }, [availableTermsInDb, quickTerms]);
+
   const loadApplications = useCallback(async () => {
     setLoading(true);
     try {
-      const url =
-        selectedTerm === 'ALL'
-          ? '/api/admin/applications'
-          : `/api/admin/applications?term=${encodeURIComponent(selectedTerm)}`;
-
+      const url = `/api/admin/applications?term=${encodeURIComponent(selectedTerm)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (res.ok) {
         const list: Application[] = (data.applications ?? []).map((item: any) => ({
           ...item,
           editStatus: item.status,
-          // 🎯 DB에 저장된 lesson_day('TUE', 'THU', 'BOTH')가 있으면 우선 적용, 없으면 희망 요일 기준으로 매핑
           editLessonDay: (item.lesson_day as LessonDay) || mapPreferredToLessonDay(item.preferred_day),
         }));
         setApplications(list);
@@ -96,15 +139,25 @@ export default function ApplicationsSettingsPage() {
     loadApplications();
   }, [loadApplications]);
 
-  const availableTerms = useMemo(() => {
-    const set = new Set<string>();
-    originalApplications.forEach((a) => {
-      if (a.term_month) set.add(a.term_month);
-    });
-    return Array.from(set);
-  }, [originalApplications]);
+const handleSelectTerm = (term: string) => {
+    // 🎯 핵심 수정: 단순히 신청 내역(originalApplications) 유무가 아니라,
+    // 전체 DB 기수 목록(availableTermsInDb)에 아예 등록조차 안 된 '진짜 미설정 기수'인지 확인합니다.
+    const isTermSetUp = availableTermsInDb.includes(term);
 
-  // 🎯 변경된 항목(Dirty) 감지 (상태 또는 배정 요일이 바뀐 경우)
+    if (!isTermSetUp) {
+      const confirmMove = window.confirm(
+        `아직 [${term}] 기수 설정이 되지 않았습니다.\n레슨일 관리 페이지로 이동하시겠습니까?`
+      );
+      if (confirmMove) {
+        router.push('/admin/calendar');
+        return;
+      }
+      return;
+    }
+
+    setSelectedTerm(term);
+  };
+
   const dirtyMap = useMemo(() => {
     const map = new Map<number, { status: string; lesson_day: LessonDay }>();
     applications.forEach((app) => {
@@ -118,7 +171,6 @@ export default function ApplicationsSettingsPage() {
 
   const isDirty = dirtyMap.size > 0;
 
-  // 상태(ON/OFF) 토글 핸들러
   const handleToggleStatus = (id: number) => {
     setApplications((prev) =>
       prev.map((app) => {
@@ -131,7 +183,6 @@ export default function ApplicationsSettingsPage() {
     );
   };
 
-  // 배정 요일 변경 핸들러
   const handleChangeLessonDay = (id: number, day: LessonDay) => {
     setApplications((prev) =>
       prev.map((app) => (app.id === id ? { ...app, editLessonDay: day } : app))
@@ -143,7 +194,6 @@ export default function ApplicationsSettingsPage() {
     showToast('변경사항을 되돌렸습니다.');
   };
 
-  // 일괄 저장 핸들러
   const handleBatchSave = async () => {
     if (saving || !isDirty) return;
     setSaving(true);
@@ -202,37 +252,51 @@ export default function ApplicationsSettingsPage() {
 
   return (
     <div className="space-y-4 pb-20">
-      {/* 기수 필터 바 */}
+      {/* 스마트 기수 필터 바 (기본 3버튼 + 과거보기 드롭다운) */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#1C2B33]/10 bg-white p-3.5 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          <span className="text-xs font-bold text-[#1C2B33]/60 mr-1">기수 필터:</span>
-          <button
-            type="button"
-            onClick={() => setSelectedTerm('ALL')}
-            className={
-              'h-7 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer ' +
-              (selectedTerm === 'ALL'
-                ? 'bg-[#1C2B33] text-white shadow-2xs'
-                : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
-            }
-          >
-            전체 보기
-          </button>
-          {availableTerms.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setSelectedTerm(t)}
-              className={
-                'h-7 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer ' +
-                (selectedTerm === t
-                  ? 'bg-[#1C2B33] text-white shadow-2xs'
-                  : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
-              }
+          <span className="text-xs font-bold text-[#1C2B33]/60 mr-1">기수 선택:</span>
+          
+          {/* 기본 버튼 3개 (과거 1달, 이번 달, 미래 1달) */}
+          {quickTerms.map((t) => {
+            const isCurrentMonth = t === defaultTerms[1];
+            const label = isCurrentMonth ? `${t} (이번 달)` : t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => handleSelectTerm(t)}
+                className={
+                  'h-7 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer ' +
+                  (selectedTerm === t
+                    ? 'bg-[#1C2B33] text-white shadow-2xs'
+                    : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+
+          {/* 과거보기 드롭다운 */}
+          {olderTerms.length > 0 && (
+            <select
+              value={olderTerms.includes(selectedTerm) ? selectedTerm : ''}
+              onChange={(e) => {
+                if (e.target.value) handleSelectTerm(e.target.value);
+              }}
+              className="h-7 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/70 focus:outline-none focus:ring-1 focus:ring-[#1F6F63] cursor-pointer"
             >
-              {t}
-            </button>
-          ))}
+              <option value="" disabled>
+                과거 기수 보기 ▼
+              </option>
+              {olderTerms.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="text-xs font-medium text-[#1C2B33]/60">
@@ -269,7 +333,7 @@ export default function ApplicationsSettingsPage() {
             ) : applications.length === 0 ? (
               <tr>
                 <td colSpan={11} className="py-8 text-center text-sm text-[#1C2B33]/40">
-                  접수된 신청 내역이 없습니다.
+                  [{selectedTerm}] 접수된 신청 내역이 없습니다.
                 </td>
               </tr>
             ) : (
@@ -293,44 +357,29 @@ export default function ApplicationsSettingsPage() {
                         : 'bg-[#1C2B33]/[0.02] opacity-60')
                     }
                   >
-                    {/* 1. 기수 */}
                     <td className="py-2.5 px-3 font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#A06C18] whitespace-nowrap">
                       {item.term_month}
                     </td>
-
-                    {/* 2. 사번 */}
                     <td className="py-2.5 px-2 text-center font-semibold text-[#1C2B33] whitespace-nowrap">
                       {item.employee_no}
                     </td>
-
-                    {/* 3. 이름 */}
                     <td className="py-2.5 px-2 text-center font-medium text-[#1C2B33] whitespace-nowrap">
                       {item.name}
                     </td>
-
-                    {/* 4. 부서 */}
                     <td className="py-2.5 px-3 text-center text-[#1C2B33]/70 text-xs whitespace-nowrap">
                       {item.department ?? '-'}
                     </td>
-
-                    {/* 5. 전화번호 */}
                     <td className="py-2.5 px-3 text-center font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 text-xs whitespace-nowrap">
                       {displayPhone(item.phone)}
                     </td>
-
-                    {/* 6. 희망 요일 (참고용) */}
                     <td className="py-2.5 px-2 text-center whitespace-nowrap">
                       <span className={'rounded-md px-2 py-0.5 text-xs font-bold ' + dayBadge.bg}>
                         {dayBadge.label}
                       </span>
                     </td>
-
-                    {/* 7. 선호 시간 */}
                     <td className="py-2.5 px-3 text-center font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/70 whitespace-nowrap">
                       {timeText || '-'}
                     </td>
-
-                    {/* 8. 상태 (ON/OFF) */}
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <button
                         type="button"
@@ -345,8 +394,6 @@ export default function ApplicationsSettingsPage() {
                         {isApproved ? 'ON' : 'OFF'}
                       </button>
                     </td>
-
-                    {/* 🎯 9. 확정 요일 선택 드롭다운 */}
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <select
                         value={item.editLessonDay}
@@ -364,8 +411,6 @@ export default function ApplicationsSettingsPage() {
                         <option value="BOTH">화/목</option>
                       </select>
                     </td>
-
-                    {/* 10. 관리 (삭제) */}
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <button
                         type="button"
@@ -375,8 +420,6 @@ export default function ApplicationsSettingsPage() {
                         삭제
                       </button>
                     </td>
-
-                    {/* 11. 요청 사항 */}
                     <td className="py-2.5 px-4 text-left text-xs text-[#1C2B33]/70 max-w-[140px] truncate">
                       {item.notes || '-'}
                     </td>
