@@ -10,6 +10,26 @@ interface RecruitmentSetting {
   available_times?: string[];
 }
 
+// 🎯 UTF-8 바이트 수 계산 헬퍼 함수
+function getUtf8BytesLength(str: string): number {
+  let bytes = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code < 0x0080) {
+      bytes += 1;
+    } else if (code < 0x0800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // surrogate pair
+      i++;
+      bytes += 4;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
 export default function ApplyPage() {
   const [setting, setSetting] = useState<RecruitmentSetting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,7 +83,6 @@ export default function ApplyPage() {
       alert('사번을 입력해 주세요.');
       return;
     }
-    // 🎯 사번 숫자 8자리 검증
     if (!/^\d{8}$/.test(cleanEmpNo)) {
       alert('사번은 숫자 8자리여야 합니다.');
       return;
@@ -104,6 +123,33 @@ export default function ApplyPage() {
     }
   };
 
+  // 🎯 기타 요청사항 변경 핸들러 (최대 66바이트 제한)
+  const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    // 한 글자씩 타이핑하면서 바이트 체크 (66바이트 초과 시 자르기 또는 입력 방지)
+    let currentBytes = 0;
+    let slicedVal = '';
+
+    for (let i = 0; i < val.length; i++) {
+      const code = val.charCodeAt(i);
+      let charBytes = 1;
+      if (code >= 0x0080 && code < 0x0800) {
+        charBytes = 2;
+      } else if (code >= 0x0800 || (code >= 0xd800 && code <= 0xdbff)) {
+        if (code >= 0xd800 && code <= 0xdbff) i++;
+        charBytes = 3;
+      }
+
+      if (currentBytes + charBytes > 66) {
+        break;
+      }
+      currentBytes += charBytes;
+      slicedVal += val[i];
+    }
+
+    setNotes(slicedVal);
+  };
+
   // 신청서 제출 로직
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,11 +168,16 @@ export default function ApplyPage() {
       if (!name.trim()) return alert('이름을 입력해 주세요.');
       if (!department.trim()) return alert('부서를 입력해 주세요.');
       
-      // 🎯 신규 신청자 전화번호 숫자 11자리 검증
       const cleanPhone = phone.trim().replace(/[^0-9]/g, '');
       if (!/^\d{11}$/.test(cleanPhone)) {
         return alert('전화번호는 숫자 11자리여야 합니다. (예: 01012345678)');
       }
+    }
+
+    // 🎯 최종 제출 전 바이트 안전 검증 (66바이트)
+    if (getUtf8BytesLength(notes) > 66) {
+      alert('기타 요청사항은 최대 66바이트(한글 기준 약 22자)까지만 입력 가능합니다.');
+      return;
     }
 
     setIsSubmitting(true);
@@ -246,6 +297,7 @@ export default function ApplyPage() {
   }
 
   const times = setting?.available_times || [];
+  const notesByteLength = getUtf8BytesLength(notes);
 
   return (
     <div className="min-h-dvh bg-[#FAFAF7] pb-8 text-[#1C2B33] overscroll-y-none">
@@ -295,7 +347,6 @@ export default function ApplyPage() {
                   maxLength={8}
                   value={employeeNo}
                   onChange={(e) => {
-                    // 🎯 숫자만 허용 (문자 입력 시 즉시 필터링)
                     const onlyNums = e.target.value.replace(/[^0-9]/g, '');
                     setEmployeeNo(onlyNums);
                     setEmployeeChecked(false);
@@ -372,7 +423,6 @@ export default function ApplyPage() {
                     maxLength={11}
                     value={phone}
                     onChange={(e) => {
-                      // 🎯 숫자만 허용 (문자 입력 시 즉시 필터링)
                       const onlyNums = e.target.value.replace(/[^0-9]/g, '');
                       setPhone(onlyNums);
                     }}
@@ -481,14 +531,19 @@ export default function ApplyPage() {
                   </div>
                 </div>
 
-                {/* 5. 비고 */}
+                {/* 5. 비고 (66바이트 제한 적용) */}
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2B33] mb-1">
-                    기타 요청사항 (선택)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-[#1C2B33]">
+                      기타 요청사항 (선택)
+                    </label>
+                    <span className="font-[family-name:var(--font-mono-club)] text-[10px] text-[#1C2B33]/50">
+                      <strong>{notesByteLength}</strong> / 66 바이트
+                    </span>
+                  </div>
                   <textarea
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    onChange={handleNotesChange}
                     rows={2}
                     placeholder="특이사항이나 문의사항이 있다면 남겨주세요."
                     className="w-full rounded-xl border border-[#1C2B33]/15 bg-[#FAFAF7]/60 p-2.5 text-xs text-[#1C2B33] placeholder:text-[#1C2B33]/30 focus:border-[#1C2B33] focus:bg-white focus:outline-none transition-all resize-none"
