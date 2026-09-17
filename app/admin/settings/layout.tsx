@@ -9,10 +9,10 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   const TABS = [
-    { href: '/admin/settings/members', label: '레슨생 관리' },
-    { href: '/admin/settings/slots', label: '시간대 슬롯 관리' },
-    { href: '/admin/settings/recruitment', label: '레슨 모집' },
-    { href: '/admin/settings/applications', label: '레슨 신청 내역' },
+    { href: '/admin/settings/members', label: '레슨명부' },
+    { href: '/admin/settings/slots', label: '시간 관리' },
+    { href: '/admin/settings/recruitment', label: '레슨모집' },
+    { href: '/admin/settings/applications', label: '레슨 신청내역' },
   ];
 
   return (

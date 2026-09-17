@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 type PreferredDay = 'TUE_ONLY' | 'THU_ONLY' | 'ANY' | 'TUE' | 'THU' | 'BOTH';
 type LessonDay = 'TUE' | 'THU' | 'BOTH';
+type ViewMode = 'default' | 'notes';
 
 interface Application {
   id: number;
@@ -30,22 +31,12 @@ function mapPreferredToLessonDay(preferred: PreferredDay): LessonDay {
   return 'TUE';
 }
 
-function displayPhone(phoneStr: string | null | undefined): string {
-  if (!phoneStr) return '-';
-  const clean = phoneStr.replace(/[^0-9]/g, '');
-  if (clean.length === 11) {
-    return clean.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
-  }
-  return phoneStr;
-}
-
 function getDayBadge(day: PreferredDay) {
   if (day === 'THU' || day === 'THU_ONLY') return { label: '목요일', bg: 'bg-[#8F3A24]/10 text-[#8F3A24]' };
   if (day === 'BOTH' || day === 'ANY') return { label: '화/목', bg: 'bg-[#1F6F63]/10 text-[#1F6F63]' };
   return { label: '화요일', bg: 'bg-[#1C2B33]/10 text-[#1C2B33]' };
 }
 
-// 'YYYY-MM' 형식의 문자열에 N개월을 더하거나 빼는 유틸 함수
 function addMonths(dateStr: string, months: number): string {
   const [year, month] = dateStr.split('-').map(Number);
   const date = new Date(year, month - 1 + months, 1);
@@ -54,7 +45,6 @@ function addMonths(dateStr: string, months: number): string {
   return `${y}-${m}`;
 }
 
-// 오늘 기준 기본 3달(과거 1개월, 이번 달, 미래 1개월) 구하기
 function getDefaultTargetTerms(): string[] {
   const now = new Date();
   const currentY = now.getFullYear();
@@ -62,9 +52,9 @@ function getDefaultTargetTerms(): string[] {
   const currentTerm = `${currentY}-${currentM}`;
 
   return [
-    addMonths(currentTerm, -1), // 과거 1개월
-    currentTerm,                // 이번 달
-    addMonths(currentTerm, 1),  // 미래 1개월 (+1달)
+    addMonths(currentTerm, -1),
+    currentTerm,
+    addMonths(currentTerm, 1),
   ];
 }
 
@@ -73,10 +63,11 @@ export default function ApplicationsSettingsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [originalApplications, setOriginalApplications] = useState<Application[]>([]);
   
-  // 기본 선택은 이번 달로 설정
   const defaultTerms = useMemo(() => getDefaultTargetTerms(), []);
-  const [selectedTerm, setSelectedTerm] = useState<string>(defaultTerms[1]); // 이번 달 기본 선택
+  const [selectedTerm, setSelectedTerm] = useState<string>(defaultTerms[1]);
   
+  const [viewMode, setViewMode] = useState<ViewMode>('default');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -91,7 +82,6 @@ export default function ApplicationsSettingsPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // DB에 존재하는 모든 고유 기수 목록 추출
   const availableTermsInDb = useMemo(() => {
     const set = new Set<string>();
     defaultTerms.forEach(t => set.add(t));
@@ -101,12 +91,10 @@ export default function ApplicationsSettingsPage() {
     return Array.from(set).sort().reverse();
   }, [originalApplications, defaultTerms]);
 
-  // 상단 버튼 3개 (과거 1달, 이번달, 미래 1달)
   const quickTerms = useMemo(() => {
     return defaultTerms;
   }, [defaultTerms]);
 
-  // 과거보기 드롭다운에 들어갈 기수들
   const olderTerms = useMemo(() => {
     return availableTermsInDb.filter((t) => !quickTerms.includes(t));
   }, [availableTermsInDb, quickTerms]);
@@ -139,9 +127,7 @@ export default function ApplicationsSettingsPage() {
     loadApplications();
   }, [loadApplications]);
 
-const handleSelectTerm = (term: string) => {
-    // 🎯 핵심 수정: 단순히 신청 내역(originalApplications) 유무가 아니라,
-    // 전체 DB 기수 목록(availableTermsInDb)에 아예 등록조차 안 된 '진짜 미설정 기수'인지 확인합니다.
+  const handleSelectTerm = (term: string) => {
     const isTermSetUp = availableTermsInDb.includes(term);
 
     if (!isTermSetUp) {
@@ -250,24 +236,25 @@ const handleSelectTerm = (term: string) => {
     }
   };
 
+  const totalColumns = viewMode === 'default' ? 7 : 5;
+
   return (
-    <div className="space-y-4 pb-20">
-      {/* 스마트 기수 필터 바 (기본 3버튼 + 과거보기 드롭다운) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#1C2B33]/10 bg-white p-3.5 shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          <span className="text-xs font-bold text-[#1C2B33]/60 mr-1">기수 선택:</span>
+    <div className="max-w-xl space-y-3 pb-20 text-xs">
+      {/* 상단 필터 바 및 2단계 뷰 전환 버튼 영역 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#1C2B33]/15 bg-white px-3 py-2 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-1 overflow-x-auto no-scrollbar">
+          <span className="font-bold text-[#1C2B33]/60 mr-0.5">기수:</span>
           
-          {/* 기본 버튼 3개 (과거 1달, 이번 달, 미래 1달) */}
           {quickTerms.map((t) => {
             const isCurrentMonth = t === defaultTerms[1];
-            const label = isCurrentMonth ? `${t} (이번 달)` : t;
+            const label = isCurrentMonth ? `${t} (이번달)` : t;
             return (
               <button
                 key={t}
                 type="button"
                 onClick={() => handleSelectTerm(t)}
                 className={
-                  'h-7 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer ' +
+                  'h-6 rounded-full px-2 text-[11px] font-semibold transition-all cursor-pointer ' +
                   (selectedTerm === t
                     ? 'bg-[#1C2B33] text-white shadow-2xs'
                     : 'border border-[#1C2B33]/15 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
@@ -278,17 +265,16 @@ const handleSelectTerm = (term: string) => {
             );
           })}
 
-          {/* 과거보기 드롭다운 */}
           {olderTerms.length > 0 && (
             <select
               value={olderTerms.includes(selectedTerm) ? selectedTerm : ''}
               onChange={(e) => {
                 if (e.target.value) handleSelectTerm(e.target.value);
               }}
-              className="h-7 rounded-full border border-[#1C2B33]/15 bg-white px-3 text-xs font-semibold text-[#1C2B33]/70 focus:outline-none focus:ring-1 focus:ring-[#1F6F63] cursor-pointer"
+              className="h-6 rounded-full border border-[#1C2B33]/15 bg-white px-1.5 text-[11px] font-semibold text-[#1C2B33]/70 focus:outline-none cursor-pointer"
             >
               <option value="" disabled>
-                과거 기수 보기 ▼
+                과거 ▼
               </option>
               {olderTerms.map((t) => (
                 <option key={t} value={t}>
@@ -299,41 +285,79 @@ const handleSelectTerm = (term: string) => {
           )}
         </div>
 
-        <div className="text-xs font-medium text-[#1C2B33]/60">
-          총 <strong className="text-[#1C2B33]">{applications.length}</strong>건 접수
-          {isDirty && <span className="ml-2 font-bold text-[#C98A2B]">(변경사항 있음)</span>}
+        <div className="flex items-center gap-1.5">
+          {/* 2단계 뷰 전환 버튼 그룹 (기본 / 요청사항) */}
+          <div className="inline-flex rounded-lg border border-[#1C2B33]/15 bg-[#FAFAF7] p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode('default')}
+              className={
+                'rounded px-2.5 py-0.5 font-semibold transition-all cursor-pointer text-[11px] ' +
+                (viewMode === 'default'
+                  ? 'bg-[#1C2B33] text-white shadow-2xs'
+                  : 'text-[#1C2B33]/70 hover:text-[#1C2B33]')
+              }
+            >
+              기본
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('notes')}
+              className={
+                'rounded px-2.5 py-0.5 font-semibold transition-all cursor-pointer text-[11px] ' +
+                (viewMode === 'notes'
+                  ? 'bg-[#1F6F63] text-white shadow-2xs'
+                  : 'text-[#1C2B33]/70 hover:text-[#1C2B33]')
+              }
+            >
+              요청사항
+            </button>
+          </div>
+
+          <div className="text-[11px] font-medium text-[#1C2B33]/60 whitespace-nowrap">
+            총 <strong className="text-[#1C2B33]">{applications.length}</strong>건
+            {isDirty && <span className="ml-1 font-bold text-[#C98A2B]">(변경)</span>}
+          </div>
         </div>
       </div>
 
       {/* 신청 목록 테이블 */}
-      <div className="overflow-x-auto rounded-2xl border border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-        <table className="w-full text-center text-sm">
-          <thead className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/60">
+      <div className="overflow-x-auto rounded-xl border border-[#1C2B33]/15 bg-white shadow-2xs">
+        <table className="w-full text-center text-xs">
+          <thead className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] font-[family-name:var(--font-mono-club)] text-[#1C2B33]/60">
             <tr>
-              <th className="py-3 px-3 text-center">기수</th>
-              <th className="py-3 px-2 text-center">사번</th>
-              <th className="py-3 px-2 text-center">이름</th>
-              <th className="py-3 px-3 text-center">부서</th>
-              <th className="py-3 px-3 text-center">전화번호</th>
-              <th className="py-3 px-2 text-center">희망 요일</th>
-              <th className="py-3 px-3 text-center">선호 시간</th>
-              <th className="py-3 px-3 text-center">상태</th>
-              <th className="py-3 px-3 text-center">확정 요일</th>
-              <th className="py-3 px-3 text-center">삭제</th>
-              <th className="py-3 px-4 text-center">요청 사항</th>
+              {viewMode === 'default' ? (
+                <>
+                  <th className="py-2.5 px-2 text-center">사번</th>
+                  <th className="py-2.5 px-2 text-center">이름</th>
+                  <th className="py-2.5 px-2 text-center">희망</th>
+                  <th className="py-2.5 px-2 text-center">선호</th>
+                  <th className="py-2.5 px-2 text-center">상태</th>
+                  <th className="py-2.5 px-2 text-center">확정</th>
+                  <th className="py-2.5 px-2 text-center">삭제</th>
+                </>
+              ) : (
+                <>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[90px]">사번</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[70px]">이름</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[60px]">상태</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[75px]">확정</th>
+                  <th className="py-2.5 px-3 text-left w-full">요청사항</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1C2B33]/5">
             {loading ? (
               <tr>
-                <td colSpan={11} className="py-8 text-center text-xs text-[#1C2B33]/40 animate-pulse">
-                  신청 내역 불러오는 중...
+                <td colSpan={totalColumns} className="py-6 text-center text-[#1C2B33]/40 animate-pulse">
+                  불러오는 중...
                 </td>
               </tr>
             ) : applications.length === 0 ? (
               <tr>
-                <td colSpan={11} className="py-8 text-center text-sm text-[#1C2B33]/40">
-                  [{selectedTerm}] 접수된 신청 내역이 없습니다.
+                <td colSpan={totalColumns} className="py-6 text-center text-[#1C2B33]/40">
+                  [{selectedTerm}] 접수 내역 없음
                 </td>
               </tr>
             ) : (
@@ -357,72 +381,97 @@ const handleSelectTerm = (term: string) => {
                         : 'bg-[#1C2B33]/[0.02] opacity-60')
                     }
                   >
-                    <td className="py-2.5 px-3 font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#A06C18] whitespace-nowrap">
-                      {item.term_month}
-                    </td>
-                    <td className="py-2.5 px-2 text-center font-semibold text-[#1C2B33] whitespace-nowrap">
-                      {item.employee_no}
-                    </td>
-                    <td className="py-2.5 px-2 text-center font-medium text-[#1C2B33] whitespace-nowrap">
-                      {item.name}
-                    </td>
-                    <td className="py-2.5 px-3 text-center text-[#1C2B33]/70 text-xs whitespace-nowrap">
-                      {item.department ?? '-'}
-                    </td>
-                    <td className="py-2.5 px-3 text-center font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 text-xs whitespace-nowrap">
-                      {displayPhone(item.phone)}
-                    </td>
-                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                      <span className={'rounded-md px-2 py-0.5 text-xs font-bold ' + dayBadge.bg}>
-                        {dayBadge.label}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-center font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/70 whitespace-nowrap">
-                      {timeText || '-'}
-                    </td>
-                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(item.id)}
-                        className={
-                          'inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer ' +
-                          (isApproved
-                            ? 'bg-[#1F6F63]/15 text-[#1F6F63] border border-[#1F6F63]/30 shadow-2xs'
-                            : 'bg-[#1C2B33]/10 text-[#1C2B33]/40 border border-[#1C2B33]/15')
-                        }
-                      >
-                        {isApproved ? 'ON' : 'OFF'}
-                      </button>
-                    </td>
-                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                      <select
-                        value={item.editLessonDay}
-                        onChange={(e) => handleChangeLessonDay(item.id, e.target.value as LessonDay)}
-                        disabled={!isApproved}
-                        className={
-                          'h-7 rounded-lg border px-2 text-xs font-bold transition-all cursor-pointer ' +
-                          (isApproved
-                            ? 'border-[#1F6F63]/30 bg-white text-[#1F6F63] focus:outline-none focus:ring-1 focus:ring-[#1F6F63]'
-                            : 'border-[#1C2B33]/10 bg-[#FAFAF7] text-[#1C2B33]/30 opacity-50 cursor-not-allowed')
-                        }
-                      >
-                        <option value="TUE">화요일</option>
-                        <option value="THU">목요일</option>
-                        <option value="BOTH">화/목</option>
-                      </select>
-                    </td>
-                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteApplication(item.id, item.name, item.employee_no)}
-                        className="rounded-lg px-2 py-1 text-xs font-medium text-[#B5482F] hover:bg-[#B5482F]/10 cursor-pointer transition-colors"
-                      >
-                        삭제
-                      </button>
-                    </td>
-                    <td className="py-2.5 px-4 text-left text-xs text-[#1C2B33]/70 max-w-[140px] truncate">
-                      {item.notes || '-'}
-                    </td>
+                    {viewMode === 'default' ? (
+                      <>
+                        <td className="py-2 px-2 font-semibold text-[#1C2B33] whitespace-nowrap">{item.employee_no}</td>
+                        <td className="py-2 px-2 font-medium text-[#1C2B33] whitespace-nowrap">{item.name}</td>
+                        <td className="py-2 px-2 whitespace-nowrap">
+                          <span className={'rounded px-1.5 py-0.5 text-[10px] font-bold ' + dayBadge.bg}>
+                            {dayBadge.label}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">{timeText || '-'}</td>
+                        <td className="py-2 px-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(item.id)}
+                            className={
+                              'inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer ' +
+                              (isApproved
+                                ? 'bg-[#1F6F63]/15 text-[#1F6F63] border border-[#1F6F63]/30 shadow-2xs'
+                                : 'bg-[#1C2B33]/10 text-[#1C2B33]/40 border border-[#1C2B33]/15')
+                            }
+                          >
+                            {isApproved ? 'ON' : 'OFF'}
+                          </button>
+                        </td>
+                        <td className="py-2 px-2 whitespace-nowrap">
+                          <select
+                            value={item.editLessonDay}
+                            onChange={(e) => handleChangeLessonDay(item.id, e.target.value as LessonDay)}
+                            disabled={!isApproved}
+                            className={
+                              'h-6 rounded border px-1 text-[10px] font-bold transition-all cursor-pointer ' +
+                              (isApproved
+                                ? 'border-[#1F6F63]/30 bg-white text-[#1F6F63] focus:outline-none'
+                                : 'border-[#1C2B33]/10 bg-[#FAFAF7] text-[#1C2B33]/30 opacity-50 cursor-not-allowed')
+                            }
+                          >
+                            <option value="TUE">화요일</option>
+                            <option value="THU">목요일</option>
+                            <option value="BOTH">화/목</option>
+                          </select>
+                        </td>
+                        <td className="py-2 px-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteApplication(item.id, item.name, item.employee_no)}
+                            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[#B5482F] hover:bg-[#B5482F]/10 cursor-pointer"
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2 px-1 font-semibold text-[#1C2B33] whitespace-nowrap text-center">{item.employee_no}</td>
+                        <td className="py-2 px-1 font-medium text-[#1C2B33] whitespace-nowrap text-center">{item.name}</td>
+                        <td className="py-2 px-1 whitespace-nowrap text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(item.id)}
+                            className={
+                              'inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer ' +
+                              (isApproved
+                                ? 'bg-[#1F6F63]/15 text-[#1F6F63] border border-[#1F6F63]/30 shadow-2xs'
+                                : 'bg-[#1C2B33]/10 text-[#1C2B33]/40 border border-[#1C2B33]/15')
+                            }
+                          >
+                            {isApproved ? 'ON' : 'OFF'}
+                          </button>
+                        </td>
+                        <td className="py-2 px-1 whitespace-nowrap text-center">
+                          <select
+                            value={item.editLessonDay}
+                            onChange={(e) => handleChangeLessonDay(item.id, e.target.value as LessonDay)}
+                            disabled={!isApproved}
+                            className={
+                              'h-6 rounded border px-1 text-[10px] font-bold transition-all cursor-pointer ' +
+                              (isApproved
+                                ? 'border-[#1F6F63]/30 bg-white text-[#1F6F63] focus:outline-none'
+                                : 'border-[#1C2B33]/10 bg-[#FAFAF7] text-[#1C2B33]/30 opacity-50 cursor-not-allowed')
+                            }
+                          >
+                            <option value="TUE">화요일</option>
+                            <option value="THU">목요일</option>
+                            <option value="BOTH">화/목</option>
+                          </select>
+                        </td>
+                        <td className="py-2 px-3 text-left text-[#1C2B33]/80 font-normal whitespace-nowrap overflow-hidden text-ellipsis max-w-[280px]">
+                          {item.notes || '-'}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })
@@ -433,38 +482,38 @@ const handleSelectTerm = (term: string) => {
 
       {/* 하단 플로팅 저장 바 */}
       {isDirty && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <span className="truncate text-xs text-white/80 whitespace-nowrap block">
-            변경사항이 있습니다 ({dirtyMap.size}건)
+        <div className="fixed bottom-6 left-6 z-40 flex w-auto max-w-xs items-center justify-between gap-3 rounded-xl bg-[#1C2B33] px-4 py-2.5 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="truncate text-[11px] text-white/80 whitespace-nowrap block">
+            변경됨 ({dirtyMap.size}건)
           </span>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
               onClick={handleRevert}
-              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer"
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer"
             >
-              ↺ 되돌리기
+              ↺ 취소
             </button>
             <button
               type="button"
               onClick={handleBatchSave}
               disabled={saving}
-              className="shrink-0 whitespace-nowrap rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow transition-all hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50 cursor-pointer"
+              className="shrink-0 whitespace-nowrap rounded-full bg-[#1F6F63] px-3.5 py-1 text-[11px] font-bold text-white shadow transition-all hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              {saving ? '저장 중...' : '저장하기'}
+              {saving ? '저장중' : '저장'}
             </button>
           </div>
         </div>
       )}
 
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-[#1C2B33] px-3 py-2 text-[11px] font-medium text-white shadow-lg animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
           <button
             type="button"
             onClick={() => setToastMessage('')}
-            className="text-xs text-white/50 hover:text-white cursor-pointer"
+            className="text-white/50 hover:text-white cursor-pointer"
           >
             ✕
           </button>

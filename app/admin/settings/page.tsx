@@ -123,52 +123,52 @@ export default function MembersSettingsPage() {
     }
   };
 
-  if (loading) return <p className="text-sm text-[#1C2B33]/40">불러오는 중...</p>;
+  if (loading) return <p className="text-xs text-[#1C2B33]/40">불러오는 중...</p>;
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-xl space-y-3 pb-20 text-xs">
       {/* 안내 문구 */}
-      <div className="rounded-2xl border border-[#1C2B33]/10 bg-[#FAFAF7] p-4 text-xs text-[#1C2B33]/70">
-        ℹ️ 마스터 회원 명단 관리 페이지입니다. 신규 회원은 <b>레슨 신청 및 승인</b> 과정을 통해 자동으로 등록됩니다.
+      <div className="rounded-xl border border-[#1C2B33]/15 bg-[#FAFAF7] px-3 py-2 text-[11px] text-[#1C2B33]/70 shadow-2xs">
+        ℹ️ 마스터 회원 명단입니다. 신규 회원은 <b>레슨 신청 및 승인</b> 시 자동 등록됩니다.
       </div>
 
       {/* 회원 목록 테이블 */}
-      <div className="overflow-x-auto rounded-2xl border border-[#1C2B33]/10 bg-white shadow-[0_1px_2px_rgba(28,43,51,0.04)]">
-        <table className="w-full text-center text-sm">
-          <thead className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/60">
+      <div className="overflow-x-auto rounded-xl border border-[#1C2B33]/15 bg-white shadow-2xs">
+        <table className="w-full text-center text-xs">
+          <thead className="border-b border-[#1C2B33]/10 bg-[#FAFAF7] font-[family-name:var(--font-mono-club)] text-[#1C2B33]/60">
             <tr>
-              <th className="py-3 px-2 text-center">사번</th>
-              <th className="py-3 px-2 text-center">이름</th>
-              <th className="py-3 px-3 text-center">전화번호</th>
-              <th className="py-3 px-4 text-center">부서</th>
-              <th className="py-3 px-3 text-center">관리</th>
+              <th className="py-2.5 px-2 text-center w-20">사번</th>
+              <th className="py-2.5 px-2 text-center w-16">이름</th>
+              <th className="py-2.5 px-2 text-center w-24">전화번호</th>
+              <th className="py-2.5 px-3 text-left">부서</th>
+              <th className="py-2.5 px-2 text-center w-20">관리</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1C2B33]/5">
             {members.map((m) => (
-              <tr key={m.id} className="hover:bg-[#FAFAF7]/60">
-                <td className="py-2.5 px-2 text-center font-semibold text-[#1C2B33] whitespace-nowrap">
+              <tr key={m.id} className="hover:bg-[#FAFAF7]/60 transition-colors">
+                <td className="py-2 px-2 text-center font-semibold text-[#1C2B33] whitespace-nowrap">
                   {m.employee_no ?? '-'}
                 </td>
-                <td className="py-2.5 px-2 text-center font-medium whitespace-nowrap">{m.name}</td>
-                <td className="py-2.5 px-3 text-center font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">
+                <td className="py-2 px-2 text-center font-medium text-[#1C2B33] whitespace-nowrap">{m.name}</td>
+                <td className="py-2 px-2 text-center font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">
                   {displayPhone(m.phone)}
                 </td>
-                <td className="py-2.5 px-4 text-left text-[#1C2B33]/70 max-w-[160px] truncate font-normal">
+                <td className="py-2 px-3 text-left text-[#1C2B33]/70 truncate font-normal">
                   {m.department ?? '-'}
                 </td>
-                <td className="py-2.5 px-3 text-center whitespace-nowrap space-x-1">
+                <td className="py-2 px-2 text-center whitespace-nowrap space-x-1">
                   <button
                     type="button"
                     onClick={() => openEditModal(m)}
-                    className="rounded px-2 py-1 text-xs font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 cursor-pointer"
+                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 cursor-pointer"
                   >
                     수정
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteMember(m.id, m.name)}
-                    className="rounded px-2 py-1 text-xs text-[#B5482F] hover:bg-[#B5482F]/10 cursor-pointer"
+                    className="rounded px-1.5 py-0.5 text-[10px] text-[#B5482F] hover:bg-[#B5482F]/10 cursor-pointer"
                   >
                     삭제
                   </button>
@@ -177,7 +177,7 @@ export default function MembersSettingsPage() {
             ))}
             {members.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-8 text-center text-sm text-[#1C2B33]/40">
+                <td colSpan={5} className="py-6 text-center text-xs text-[#1C2B33]/40">
                   등록된 회원이 없습니다.
                 </td>
               </tr>
@@ -189,15 +189,15 @@ export default function MembersSettingsPage() {
       {/* 수정 모달 */}
       {editModalOpen && editingMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-150">
-            <h3 className="font-[family-name:var(--font-display)] text-lg font-bold text-[#1C2B33]">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl animate-in zoom-in-95 duration-150 text-xs">
+            <h3 className="font-[family-name:var(--font-display)] text-sm font-bold text-[#1C2B33]">
               회원 정보 수정
             </h3>
 
-            <form onSubmit={handleUpdateMember} className="mt-4 space-y-3.5">
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleUpdateMember} className="mt-3 space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2B33]/70">
+                  <label className="block text-[11px] font-bold text-[#1C2B33]/70">
                     사번 <span className="text-[#B5482F]">*</span>
                   </label>
                   <input
@@ -207,11 +207,11 @@ export default function MembersSettingsPage() {
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, employee_no: e.target.value })
                     }
-                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-[#1C2B33]/20 px-2.5 py-1.5 text-xs focus:border-[#1C2B33] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2B33]/70">
+                  <label className="block text-[11px] font-bold text-[#1C2B33]/70">
                     이름 <span className="text-[#B5482F]">*</span>
                   </label>
                   <input
@@ -221,25 +221,25 @@ export default function MembersSettingsPage() {
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, name: e.target.value })
                     }
-                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-[#1C2B33]/20 px-2.5 py-1.5 text-xs focus:border-[#1C2B33] focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2B33]/70">부서</label>
+                  <label className="block text-[11px] font-bold text-[#1C2B33]/70">부서</label>
                   <input
                     type="text"
                     value={editingMember.department}
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, department: e.target.value })
                     }
-                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-[#1C2B33]/20 px-2.5 py-1.5 text-xs focus:border-[#1C2B33] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2B33]/70">전화번호</label>
+                  <label className="block text-[11px] font-bold text-[#1C2B33]/70">전화번호</label>
                   <input
                     type="tel"
                     maxLength={11}
@@ -248,23 +248,23 @@ export default function MembersSettingsPage() {
                       const onlyNums = e.target.value.replace(/[^0-9]/g, '');
                       setEditingMember({ ...editingMember, phone: onlyNums });
                     }}
-                    className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-[#1C2B33]/20 px-2.5 py-1.5 text-xs focus:border-[#1C2B33] focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center justify-end gap-2 pt-2">
+              <div className="mt-5 flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setEditModalOpen(false)}
-                  className="rounded-full px-4 py-2 text-xs font-semibold text-[#1C2B33]/60 hover:bg-[#1C2B33]/5 cursor-pointer"
+                  className="rounded-full px-3 py-1.5 text-[11px] font-semibold text-[#1C2B33]/60 hover:bg-[#1C2B33]/5 cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
                   disabled={submittingEdit}
-                  className="rounded-full bg-[#1C2B33] px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#1C2B33]/90 disabled:opacity-50 cursor-pointer"
+                  className="rounded-full bg-[#1C2B33] px-4 py-1.5 text-[11px] font-bold text-white shadow-sm hover:bg-[#1C2B33]/90 disabled:opacity-50 cursor-pointer"
                 >
                   {submittingEdit ? '저장 중...' : '수정 완료'}
                 </button>
@@ -275,9 +275,9 @@ export default function MembersSettingsPage() {
       )}
 
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-[#1C2B33] px-3 py-2 text-[11px] font-medium text-white shadow-lg animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
-          <button type="button" onClick={() => setToastMessage('')} className="text-xs text-white/50 hover:text-white cursor-pointer">
+          <button type="button" onClick={() => setToastMessage('')} className="text-[11px] text-white/50 hover:text-white cursor-pointer">
             ✕
           </button>
         </div>
