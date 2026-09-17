@@ -1,11 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+
+interface RecruitmentSetting {
+  is_open: boolean;
+  current_term: string;
+  notice?: string;
+}
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // 모집 상태 및 초기 전체 로딩 상태
+  const [recruitment, setRecruitment] = useState<RecruitmentSetting | null>(null);
+  const [isPageReady, setIsPageReady] = useState(false);
+
+  useEffect(() => {
+    async function initPage() {
+      try {
+        const res = await fetch('/api/recruitment');
+        if (res.ok) {
+          const data = await res.json();
+          setRecruitment(data);
+        }
+      } catch {
+        // 에러 시에도 기본 화면 노출
+      } finally {
+        // 모집 상태 조회까지 완전히 끝난 후 한 번에 화면 표시
+        setIsPageReady(true);
+      }
+    }
+    initPage();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,8 +62,6 @@ export default function LoginPage() {
       }
 
       localStorage.setItem('role', data.role);
-      
-      // 권한별 화면으로 즉시 이동
       window.location.href = data.redirectTo || (data.role === 'admin' ? '/admin/assign' : '/viewer/assign');
     } catch {
       setError('네트워크 오류가 발생했습니다.');
@@ -42,9 +69,18 @@ export default function LoginPage() {
     }
   };
 
+  // 모집 상태 확인이 끝날 때까지 빈 화면이나 스켈레톤 상태를 유지
+  if (!isPageReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#FAFAF7]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#C98A2B]/20 border-t-[#C98A2B]" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAF7] px-4 text-[#1C2B33]">
-      <div className="w-full max-w-sm rounded-3xl border border-[#C98A2B]/20 bg-white p-8 shadow-[0_12px_40px_rgba(201,138,43,0.08)]">
+      <div className="w-full max-w-sm rounded-3xl border border-[#C98A2B]/20 bg-white p-8 shadow-[0_12px_40px_rgba(201,138,43,0.08)] animate-in fade-in duration-200">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C98A2B]/10 text-[#C98A2B] ring-1 ring-[#C98A2B]/30">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -84,6 +120,22 @@ export default function LoginPage() {
             {loading ? '확인 중...' : '접속하기'}
           </button>
         </form>
+
+        {/* 🌟 모집 여부까지 확인된 완성형 UI가 처음부터 한 번에 노출 */}
+        {recruitment?.is_open && (
+          <div className="mt-6 border-t border-[#C98A2B]/15 pt-6 text-center">
+            <p className="text-xs text-[#1C2B33]/60 mb-2 font-medium">
+              현재 <strong className="text-[#C98A2B] font-semibold">{recruitment.current_term} 기수</strong> 수강생을 모집하고 있습니다.
+            </p>
+            <Link
+              href="/apply"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-[#C98A2B]/40 bg-[#C98A2B]/10 py-3 text-xs font-bold text-[#9C6615] transition-all hover:bg-[#C98A2B] hover:text-white active:scale-[0.98]"
+            >
+              <span>레슨 신청하러 가기</span>
+              <span>→</span>
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

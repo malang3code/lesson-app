@@ -7,8 +7,7 @@ export async function GET() {
     const { data, error } = await supabaseAdmin
       .from('members')
       .select('*')
-      .order('is_active', { ascending: false })
-      .order('name');
+      .order('name', { ascending: true });
 
     if (error) throw error;
     return NextResponse.json({ members: data ?? [] });
@@ -22,7 +21,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, department, phone, employee_no, lesson_day } = body;
+    const { name, department, phone, employee_no } = body;
 
     // 이름 필수값 검증
     if (!name?.trim()) {
@@ -35,7 +34,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '사번은 숫자 8자리로 입력해주세요.' }, { status: 400 });
     }
 
-    // 🎯 사번 중복 확인
+    // 사번 중복 확인
     const { data: existingEmp, error: checkEmpErr } = await supabaseAdmin
       .from('members')
       .select('id')
@@ -46,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `이미 등록된 사번(${cleanEmpNo})입니다.` }, { status: 400 });
     }
 
-    // 전화번호: 입력된 경우 숫자 11자리 검증 및 중복 체크
+    // 전화번호 검증 및 중복 체크
     let cleanPhone: string | null = null;
     if (phone?.trim()) {
       const pureDigits = phone.replace(/[^0-9]/g, '');
@@ -54,7 +53,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '전화번호는 숫자 11자리로 입력해주세요.' }, { status: 400 });
       }
 
-      // 🎯 전화번호 중복 확인
       const { data: existingPhone, error: checkPhoneErr } = await supabaseAdmin
         .from('members')
         .select('id')
@@ -68,9 +66,6 @@ export async function POST(req: NextRequest) {
       cleanPhone = pureDigits;
     }
 
-    // 🎯 레슨 요일 검증 (기본값 TUE)
-    const validLessonDay = ['TUE', 'THU', 'BOTH'].includes(lesson_day) ? lesson_day : 'TUE';
-
     const { data, error } = await supabaseAdmin
       .from('members')
       .insert({
@@ -78,8 +73,6 @@ export async function POST(req: NextRequest) {
         employee_no: cleanEmpNo,
         department: department?.trim() || null,
         phone: cleanPhone,
-        lesson_day: validLessonDay,
-        is_active: true,
       })
       .select()
       .single();
@@ -98,18 +91,17 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 3. 수강생 상태/정보 수정 (PATCH)
+// 3. 수강생 정보 수정 (PATCH)
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, is_active, name, department, phone, employee_no, lesson_day } = body;
+    const { id, name, department, phone, employee_no } = body;
 
     if (!id) {
       return NextResponse.json({ error: '회원 ID가 필요합니다.' }, { status: 400 });
     }
 
     const updatePayload: Record<string, unknown> = {};
-    if (typeof is_active === 'boolean') updatePayload.is_active = is_active;
     
     if (name !== undefined) {
       if (!name.trim()) return NextResponse.json({ error: '이름은 필수 항목입니다.' }, { status: 400 });
@@ -161,13 +153,6 @@ export async function PATCH(req: NextRequest) {
         updatePayload.phone = pureDigits;
       } else {
         updatePayload.phone = null;
-      }
-    }
-
-    // 🎯 레슨 요일 수정 반영
-    if (lesson_day !== undefined) {
-      if (['TUE', 'THU', 'BOTH'].includes(lesson_day)) {
-        updatePayload.lesson_day = lesson_day;
       }
     }
 

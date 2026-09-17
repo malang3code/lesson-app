@@ -79,8 +79,7 @@ export default function CalendarAdminPage() {
   const [showPast, setShowPast] = useState(false);
   const [pastMonthIndex, setPastMonthIndex] = useState(0);
 
-  // 🎯 기수(Term) 8회차 설정 관련 상태
-  const [isTermMode, setIsTermMode] = useState(false);
+  // 항상 활성화된 기수(Term) 8회차 설정 상태
   const [selectedTermYear, setSelectedTermYear] = useState(() => new Date().getFullYear());
   const [selectedTermMonth, setSelectedTermMonth] = useState(() => new Date().getMonth() + 1);
   const [termModalOpen, setTermModalOpen] = useState(false);
@@ -241,7 +240,9 @@ export default function CalendarAdminPage() {
     }
   };
 
+  // 🎯 토글 핸들러 (프론트 팝업 제거, 백엔드 DB 방어에 위임)
   const toggleDate = (dateStr: string, currentlyActive: boolean) => {
+    // 이미 수강생 배정이 등록된 날짜인지 확인하는 최소한의 실수 방어만 유지
     if (currentlyActive && (assignmentCounts[dateStr] || 0) > 0) {
       const count = assignmentCounts[dateStr];
       const confirmed = window.confirm(
@@ -263,7 +264,7 @@ export default function CalendarAdminPage() {
         return next;
       });
     } else {
-      const targetTerm = isTermMode ? currentSelectedTerm : dateStr.slice(0, 7);
+      const targetTerm = currentSelectedTerm;
 
       const nextActive = new Set(activeDates);
       nextActive.add(dateStr);
@@ -276,22 +277,20 @@ export default function CalendarAdminPage() {
       setActiveDates(nextActive);
       setTermMap(nextTermMap);
 
-      if (isTermMode) {
-        const updatedTermDates = Array.from(nextActive)
-          .filter((d) => nextTermMap[d] === currentSelectedTerm)
-          .sort();
+      const updatedTermDates = Array.from(nextActive)
+        .filter((d) => nextTermMap[d] === currentSelectedTerm)
+        .sort();
 
-        if (updatedTermDates.length === 8) {
-          setCompletedTermDates(updatedTermDates);
-          setTermModalOpen(true);
-        }
+      if (updatedTermDates.length === 8) {
+        setCompletedTermDates(updatedTermDates);
+        setTermModalOpen(true);
       }
     }
   };
 
   const autoSelectTueThu = (year: number, month: number) => {
     const lastDate = new Date(year, month, 0).getDate();
-    const targetTerm = isTermMode ? currentSelectedTerm : `${year}-${String(month).padStart(2, '0')}`;
+    const targetTerm = currentSelectedTerm;
 
     setActiveDates((prev) => {
       const next = new Set(prev);
@@ -307,12 +306,10 @@ export default function CalendarAdminPage() {
       }
       setTermMap(newMap);
 
-      if (isTermMode) {
-        const updated = Array.from(next).filter((d) => newMap[d] === currentSelectedTerm).sort();
-        if (updated.length === 8) {
-          setCompletedTermDates(updated);
-          setTermModalOpen(true);
-        }
+      const updated = Array.from(next).filter((d) => newMap[d] === currentSelectedTerm).sort();
+      if (updated.length === 8) {
+        setCompletedTermDates(updated);
+        setTermModalOpen(true);
       }
       return next;
     });
@@ -378,6 +375,7 @@ export default function CalendarAdminPage() {
 
       const data = await res.json();
       if (!res.ok) {
+        // 🎯 백엔드 DB 방어 로직에서 넘어온 에러 메시지를 토스트로 명확하게 노출
         showToast(data.error || '저장 실패');
         return;
       }
@@ -412,7 +410,7 @@ export default function CalendarAdminPage() {
           </div>
         </div>
 
-        {/* 🎯 컨트롤 버튼 영역: [과거 날짜 보기] 바로 오른쪽에 [월별 기수설정] 나란히 배치 */}
+        {/* 컨트롤 버튼 영역 (과거 보기) */}
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -427,7 +425,6 @@ export default function CalendarAdminPage() {
             {showPast ? '✓ 과거 달력 보는 중' : '과거 날짜 보기'}
           </button>
 
-          {/* 🎯 과거 탐색 화살표 */}
           {showPast && availablePastMonths.length > 0 && (
             <div className="flex items-center gap-1.5">
               <button
@@ -437,7 +434,6 @@ export default function CalendarAdminPage() {
                 }
                 disabled={pastMonthIndex >= availablePastMonths.length - 1}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-[#1C2B33]/15 bg-white text-xs disabled:opacity-30 hover:bg-[#1C2B33]/5 transition-colors"
-                title="더 이전 과거 달"
               >
                 ◀
               </button>
@@ -449,66 +445,48 @@ export default function CalendarAdminPage() {
                 onClick={() => setPastMonthIndex((prev) => Math.max(prev - 1, 0))}
                 disabled={pastMonthIndex <= 0}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-[#1C2B33]/15 bg-white text-xs disabled:opacity-30 hover:bg-[#1C2B33]/5 transition-colors"
-                title="더 최근 과거 달"
               >
                 ▶
               </button>
             </div>
           )}
-
-          {/* 🎯 월별 기수설정 버튼 */}
-          <button
-            type="button"
-            onClick={() => setIsTermMode((v) => !v)}
-            className={
-              'flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition-all ' +
-              (isTermMode
-                ? 'bg-[#1F6F63] text-white shadow-2xs ring-2 ring-[#1F6F63]/20'
-                : 'border border-[#1C2B33]/20 bg-white text-[#1C2B33]/70 hover:bg-[#1C2B33]/5')
-            }
-          >
-            
-            <span>{isTermMode ? '✓ 월별 기수설정 중' : '월별 기수설정'}</span>
-          </button>
         </div>
 
-        {/* 🎯 [규격 통일] max-w-lg (512px) 적용 */}
-        {isTermMode && (
-          <div className="mt-3 w-full max-w-lg flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-[#1F6F63]/30 bg-[#E8F3EE] px-4 py-2.5 animate-in fade-in duration-150">
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={handlePrevTerm}
-                  className="grid h-6 w-6 place-items-center rounded-full border border-[#1F6F63]/20 bg-white text-xs font-bold text-[#1F6F63] hover:bg-[#1F6F63]/10"
-                >
-                  ◀
-                </button>
-                <span className="font-[family-name:var(--font-display)] text-xs font-bold text-[#1F6F63] px-1">
-                  {selectedTermYear}년 {selectedTermMonth}월 기수
-                </span>
-                <button
-                  type="button"
-                  onClick={handleNextTerm}
-                  className="grid h-6 w-6 place-items-center rounded-full border border-[#1F6F63]/20 bg-white text-xs font-bold text-[#1F6F63] hover:bg-[#1F6F63]/10"
-                >
-                  ▶
-                </button>
-              </div>
-
-              <span className="rounded-full bg-[#1F6F63] px-2.5 py-0.5 font-[family-name:var(--font-mono-club)] text-xs font-bold text-white shadow-2xs">
-                {currentTermDates.length} / 8회
+        {/* 상시 노출되는 기수 설정 패널 */}
+        <div className="mt-3 w-full max-w-lg flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-[#1F6F63]/30 bg-[#E8F3EE] px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handlePrevTerm}
+                className="grid h-6 w-6 place-items-center rounded-full border border-[#1F6F63]/20 bg-white text-xs font-bold text-[#1F6F63] hover:bg-[#1F6F63]/10 cursor-pointer"
+              >
+                ◀
+              </button>
+              <span className="font-[family-name:var(--font-display)] text-xs font-bold text-[#1F6F63] px-1">
+                {selectedTermYear}년 {selectedTermMonth}월 기수
               </span>
+              <button
+                type="button"
+                onClick={handleNextTerm}
+                className="grid h-6 w-6 place-items-center rounded-full border border-[#1F6F63]/20 bg-white text-xs font-bold text-[#1F6F63] hover:bg-[#1F6F63]/10 cursor-pointer"
+              >
+                ▶
+              </button>
             </div>
 
-            <p className="text-[11px] text-[#1F6F63]/80">
-              날짜 8개 선택하세요. 다른 달의 날짜도 {selectedTermMonth}월 기수로 포함 가능합니다.
-            </p>
+            <span className="rounded-full bg-[#1F6F63] px-2.5 py-0.5 font-[family-name:var(--font-mono-club)] text-xs font-bold text-white shadow-2xs">
+              {currentTermDates.length} / 8회
+            </span>
           </div>
-        )}
+
+          <p className="text-[11px] text-[#1F6F63]/80">
+            클릭하는 날짜는 현재 선택된 <strong className="font-bold">{selectedTermMonth}월 기수</strong>로 자동 지정됩니다.
+          </p>
+        </div>
       </header>
 
-      {/* 🎯 [규격 통일] max-w-lg (512px) 1열 세로 레이아웃 */}
+      {/* max-w-lg (512px) 1열 세로 레이아웃 */}
       <main className="w-full max-w-lg px-5 py-5 sm:px-8">
         {loading ? (
           <p className="text-sm text-[#1C2B33]/50">불러오는 중...</p>
@@ -531,7 +509,7 @@ export default function CalendarAdminPage() {
                     <button
                       type="button"
                       onClick={() => autoSelectTueThu(m.year, m.month)}
-                      className="flex h-7 items-center rounded-full border border-[#1C2B33]/15 bg-white px-2.5 text-xs font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 transition-colors"
+                      className="flex h-7 items-center rounded-full border border-[#1C2B33]/15 bg-white px-2.5 text-xs font-medium text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 transition-colors cursor-pointer"
                     >
                       전체선택
                     </button>
@@ -539,7 +517,7 @@ export default function CalendarAdminPage() {
                       type="button"
                       onClick={() => clearMonth(m.year, m.month)}
                       title="배정 데이터가 없는 레슨일만 안전하게 해제합니다"
-                      className="flex h-7 items-center rounded-full border border-[#B5482F]/30 bg-white px-2.5 text-xs font-medium text-[#B5482F] hover:bg-[#B5482F]/10 transition-colors"
+                      className="flex h-7 items-center rounded-full border border-[#B5482F]/30 bg-white px-2.5 text-xs font-medium text-[#B5482F] hover:bg-[#B5482F]/10 transition-colors cursor-pointer"
                     >
                       전체 해제
                     </button>
@@ -568,8 +546,8 @@ export default function CalendarAdminPage() {
                       return <div key={`empty-${idx}`} className="h-9" />;
                     }
 
-                    const isCurrentTermActive = isTermMode && day.isActive && day.termMonth === currentSelectedTerm;
-                    const isCrossMonthTerm = isTermMode && day.isActive && day.termMonth && day.termMonth !== `${m.year}-${String(m.month).padStart(2, '0')}`;
+                    const isCurrentTermActive = day.isActive && day.termMonth === currentSelectedTerm;
+                    const isCrossMonthTerm = day.isActive && day.termMonth && day.termMonth !== `${m.year}-${String(m.month).padStart(2, '0')}`;
 
                     return (
                       <button
@@ -577,7 +555,7 @@ export default function CalendarAdminPage() {
                         type="button"
                         onClick={() => toggleDate(day.date, day.isActive)}
                         className={
-                          'relative flex h-9 flex-col items-center justify-center rounded-xl text-xs font-medium transition-all ' +
+                          'relative flex h-9 flex-col items-center justify-center rounded-xl text-xs font-medium transition-all cursor-pointer ' +
                           (day.isActive
                             ? isCurrentTermActive
                               ? 'bg-[#1F6F63] font-bold text-white shadow-xs hover:bg-[#1F6F63]/90 ring-2 ring-[#1F6F63]/30'
@@ -611,7 +589,7 @@ export default function CalendarAdminPage() {
         )}
       </main>
 
-      {/* 🎯 8회차 완성 확인 팝업 모달 */}
+      {/* 8회차 완성 확인 팝업 모달 */}
       {termModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px] animate-in fade-in duration-150">
           <div className="w-full max-w-sm rounded-3xl border border-[#1C2B33]/10 bg-white p-5 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -622,7 +600,7 @@ export default function CalendarAdminPage() {
               <button
                 type="button"
                 onClick={() => setTermModalOpen(false)}
-                className="grid h-7 w-7 place-items-center rounded-full text-xs text-[#1C2B33]/50 hover:bg-[#1C2B33]/10"
+                className="grid h-7 w-7 place-items-center rounded-full text-xs text-[#1C2B33]/50 hover:bg-[#1C2B33]/10 cursor-pointer"
               >
                 ✕
               </button>
@@ -649,7 +627,7 @@ export default function CalendarAdminPage() {
               <button
                 type="button"
                 onClick={() => setTermModalOpen(false)}
-                className="rounded-full border border-[#1C2B33]/15 px-3.5 py-1.5 text-xs font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
+                className="rounded-full border border-[#1C2B33]/15 px-3.5 py-1.5 text-xs font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 cursor-pointer"
               >
                 다시 수정
               </button>
@@ -660,7 +638,7 @@ export default function CalendarAdminPage() {
                   handleSaveChanges();
                 }}
                 disabled={saving}
-                className="rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#1F6F63]/90 disabled:opacity-50"
+                className="rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#1F6F63]/90 disabled:opacity-50 cursor-pointer"
               >
                 {saving ? '저장 중...' : '등록 확정'}
               </button>
@@ -669,7 +647,7 @@ export default function CalendarAdminPage() {
         </div>
       )}
 
-      {/* 🎯 하단 플로팅 저장 바 (max-w-lg 일치) */}
+      {/* 하단 플로팅 저장 바 */}
       {showSaveBar && isDirty && (
         <div className="fixed bottom-6 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-2.5 rounded-2xl bg-[#1C2B33] px-4 py-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           <span className="truncate text-xs text-white/80 whitespace-nowrap block">
@@ -680,7 +658,7 @@ export default function CalendarAdminPage() {
             <button
               type="button"
               onClick={handleRevert}
-              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 active:scale-95 transition-all"
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer"
             >
               ↺ 되돌리기
             </button>
@@ -688,7 +666,7 @@ export default function CalendarAdminPage() {
               type="button"
               onClick={handleSaveChanges}
               disabled={saving}
-              className="shrink-0 whitespace-nowrap rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow transition-all hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap rounded-full bg-[#1F6F63] px-4 py-1.5 text-xs font-bold text-white shadow transition-all hover:bg-[#1F6F63]/90 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               {saving ? '저장 중...' : '저장'}
             </button>
@@ -696,14 +674,14 @@ export default function CalendarAdminPage() {
         </div>
       )}
 
-      {/* 🎯 토스트 메시지 */}
+      {/* 토스트 메시지 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
           <button
             type="button"
             onClick={() => setToastMessage('')}
-            className="text-xs text-white/50 hover:text-white"
+            className="text-xs text-white/50 hover:text-white cursor-pointer"
           >
             ✕
           </button>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import AdminDrawer from '@/components/AdminDrawer';
 
 type LessonDay = 'TUE' | 'THU' | 'BOTH';
@@ -34,19 +35,18 @@ export default function AdminMembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [search, setSearch] = useState('');
   const [dayFilter, setDayFilter] = useState<'ALL' | LessonDay>('ALL');
+  const [currentTerm] = useState('2026-09'); // 기본 기수
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
 
-  // 신규 등록 / 수정 폼 모달 상태
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingEmpNo, setEditingEmpNo] = useState<string | null>(null);
 
   const [formName, setFormName] = useState('');
   const [formEmpNo, setFormEmpNo] = useState('');
   const [formDept, setFormDept] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formLessonDay, setFormLessonDay] = useState<LessonDay>('TUE');
-  const [formIsActive, setFormIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const showToast = useCallback((msg: string) => {
@@ -62,7 +62,7 @@ export default function AdminMembersPage() {
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/members');
+      const res = await fetch(`/api/admin/members?term=${currentTerm}`);
       const data = await res.json();
       if (res.ok) {
         setMembers(data.members || []);
@@ -74,58 +74,51 @@ export default function AdminMembersPage() {
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [currentTerm, showToast]);
 
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
 
-  // 신규 등록 모달 열기
   const openCreateModal = () => {
-    setEditingId(null);
+    setEditingEmpNo(null);
     setFormName('');
     setFormEmpNo('');
     setFormDept('');
     setFormPhone('');
     setFormLessonDay('TUE');
-    setFormIsActive(true);
     setModalOpen(true);
   };
 
-  // 수정 모달 열기
   const openEditModal = (m: Member) => {
-    setEditingId(m.id);
+    setEditingEmpNo(m.employee_no);
     setFormName(m.name);
     setFormEmpNo(m.employee_no || '');
     setFormDept(m.department || '');
     setFormPhone(m.phone || '');
     setFormLessonDay(m.lesson_day || 'TUE');
-    setFormIsActive(m.is_active);
     setModalOpen(true);
   };
 
-  // 저장 (신규 등록 or 수정)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) {
-      showToast('이름을 입력해주세요.');
+    if (!formName.trim() || !formEmpNo.trim()) {
+      showToast('사번과 이름을 입력해주세요.');
       return;
     }
 
     setSubmitting(true);
     try {
-      const isEdit = editingId !== null;
       const res = await fetch('/api/admin/members', {
-        method: isEdit ? 'PUT' : 'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: editingId,
           employee_no: formEmpNo,
           name: formName,
           department: formDept,
           phone: formPhone,
           lesson_day: formLessonDay,
-          is_active: formIsActive,
+          term: currentTerm,
         }),
       });
 
@@ -135,13 +128,30 @@ export default function AdminMembersPage() {
         return;
       }
 
-      showToast(isEdit ? '회원 정보가 수정되었습니다.' : '신규 회원이 등록되었습니다.');
+      showToast('저장되었습니다.');
       setModalOpen(false);
       loadMembers();
     } catch {
       showToast('네트워크 오류');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (employeeNo: string, name: string) => {
+    if (!confirm(`'${name}' 회원을 이번 기수(${currentTerm}) 명단에서 제외하시겠습니까?`)) return;
+    try {
+      const res = await fetch(`/api/admin/members?employee_no=${employeeNo}&term=${currentTerm}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        loadMembers();
+        showToast('제외되었습니다.');
+      } else {
+        showToast('삭제 실패');
+      }
+    } catch {
+      showToast('네트워크 오류');
     }
   };
 
@@ -168,14 +178,29 @@ export default function AdminMembersPage() {
             </h1>
           </div>
 
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="flex h-9 items-center gap-1.5 rounded-full bg-[#1C2B33] px-4 text-xs font-bold text-white shadow-sm hover:bg-[#1C2B33]/90 active:scale-95 transition-all"
-          >
-            <span>+</span>
-            <span>회원 등록</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* 🎯 화면 전환 버튼 */}
+            <div className="flex rounded-full border border-[#1C2B33]/15 bg-white p-1 shadow-xs">
+              <span className="rounded-full bg-[#1C2B33] px-3.5 py-1.5 text-xs font-bold text-white">
+                기수별 수강생
+              </span>
+              <Link
+                href="/admin/settings/members"
+                className="rounded-full px-3.5 py-1.5 text-xs font-semibold text-[#1C2B33]/60 hover:text-[#1C2B33]"
+              >
+                전체 마스터 명단
+              </Link>
+            </div>
+
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="flex h-9 items-center gap-1.5 rounded-full bg-[#1C2B33] px-4 text-xs font-bold text-white shadow-sm hover:bg-[#1C2B33]/90 active:scale-95 transition-all"
+            >
+              <span>+</span>
+              <span>수강생 등록</span>
+            </button>
+          </div>
         </div>
 
         {/* 요일 필터 & 검색 */}
@@ -223,7 +248,7 @@ export default function AdminMembersPage() {
         <div className="rounded-3xl border border-[#1C2B33]/10 bg-white p-5 shadow-[0_4px_20px_rgba(28,43,51,0.04)] sm:p-6">
           <div className="mb-4 flex items-center justify-between">
             <span className="text-xs font-bold text-[#1C2B33]/70">
-              총 {filteredMembers.length}명
+              {currentTerm} 기수 총 {filteredMembers.length}명
             </span>
           </div>
 
@@ -231,7 +256,7 @@ export default function AdminMembersPage() {
             <p className="py-12 text-center text-sm text-[#1C2B33]/50">불러오는 중...</p>
           ) : filteredMembers.length === 0 ? (
             <p className="py-12 text-center text-sm text-[#1C2B33]/50">
-              {search ? '검색 결과가 없습니다.' : '등록된 회원이 없습니다.'}
+              {search ? '검색 결과가 없습니다.' : '등록된 수강생이 없습니다.'}
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
@@ -248,28 +273,31 @@ export default function AdminMembersPage() {
                         <span className={'rounded-md px-1.5 py-0.5 text-[10px] font-bold ' + dayTag.bg}>
                           {dayTag.label}
                         </span>
-                        {!m.is_active && (
-                          <span className="rounded-md bg-[#B5482F]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#B5482F]">
-                            비활성
-                          </span>
-                        )}
                       </div>
                       <div className="mt-1 text-xs text-[#1C2B33]/60">
-                        {m.department || '부서 미입력'}
+                        {m.department || '부서 미입력'} ({m.employee_no})
                       </div>
                       <div className="mt-0.5 font-[family-name:var(--font-mono-club)] text-xs text-[#1C2B33]/40">
                         {displayPhone(m.phone)}
                       </div>
                     </div>
 
-                    {/* 🎯 수정 버튼 */}
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(m)}
-                      className="ml-3 shrink-0 rounded-full border border-[#1C2B33]/15 bg-white px-3 py-1 text-xs font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5 active:scale-95 transition-all"
-                    >
-                      수정
-                    </button>
+                    <div className="ml-3 flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(m)}
+                        className="rounded-full border border-[#1C2B33]/15 bg-white px-2.5 py-1 text-xs font-semibold text-[#1C2B33]/70 hover:bg-[#1C2B33]/5"
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m.employee_no, m.name)}
+                        className="rounded-full px-2 py-1 text-xs text-[#B5482F] hover:bg-[#B5482F]/10"
+                      >
+                        제외
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -278,15 +306,29 @@ export default function AdminMembersPage() {
         </div>
       </main>
 
-      {/* 🎯 회원 등록 / 수정 모달 */}
+      {/* 등록 / 수정 모달 */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-150">
             <h3 className="font-[family-name:var(--font-display)] text-lg font-bold text-[#1C2B33]">
-              {editingId !== null ? '회원 정보 수정' : '신규 회원 등록'}
+              {editingEmpNo !== null ? '수강생 정보 수정' : '신규 수강생 등록'}
             </h3>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#1C2B33]/70">
+                  사번 <span className="text-[#B5482F]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formEmpNo}
+                  onChange={(e) => setFormEmpNo(e.target.value)}
+                  placeholder="20190413"
+                  className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-[#1C2B33]/70">
                   이름 <span className="text-[#B5482F]">*</span>
@@ -301,19 +343,16 @@ export default function AdminMembersPage() {
                 />
               </div>
 
-              {/* 🎯 레슨 요일 선택 (화 / 목 / 화목) */}
               <div>
                 <label className="block text-xs font-bold text-[#1C2B33]/70">
                   레슨 요일 <span className="text-[#B5482F]">*</span>
                 </label>
                 <div className="mt-1.5 grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      { id: 'TUE', label: '화요일' },
-                      { id: 'THU', label: '목요일' },
-                      { id: 'BOTH', label: '화·목' },
-                    ] as const
-                  ).map((item) => (
+                  {([
+                    { id: 'TUE', label: '화요일' },
+                    { id: 'THU', label: '목요일' },
+                    { id: 'BOTH', label: '화·목' },
+                  ] as const).map((item) => (
                     <button
                       key={item.id}
                       type="button"
@@ -343,39 +382,15 @@ export default function AdminMembersPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2B33]/70">사번</label>
+                  <label className="block text-xs font-bold text-[#1C2B33]/70">전화번호</label>
                   <input
                     type="text"
-                    value={formEmpNo}
-                    onChange={(e) => setFormEmpNo(e.target.value)}
-                    placeholder="선택사항"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    placeholder="01012345678"
                     className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#1C2B33]/70">전화번호</label>
-                <input
-                  type="text"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  placeholder="010-1234-5678"
-                  className="mt-1 w-full rounded-xl border border-[#1C2B33]/20 px-3 py-2 text-sm focus:border-[#1C2B33] focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="isActiveCheck"
-                  checked={formIsActive}
-                  onChange={(e) => setFormIsActive(e.target.checked)}
-                  className="h-4 w-4 rounded accent-[#1C2B33]"
-                />
-                <label htmlFor="isActiveCheck" className="text-xs font-semibold text-[#1C2B33]/80">
-                  활성 회원 (시간표 배정 대상 포함)
-                </label>
               </div>
 
               <div className="mt-6 flex items-center justify-end gap-2 pt-2">
@@ -391,7 +406,7 @@ export default function AdminMembersPage() {
                   disabled={submitting}
                   className="rounded-full bg-[#1C2B33] px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#1C2B33]/90 disabled:opacity-50"
                 >
-                  {submitting ? '저장 중...' : editingId !== null ? '수정 완료' : '등록'}
+                  {submitting ? '저장 중...' : '저장'}
                 </button>
               </div>
             </form>
@@ -399,15 +414,10 @@ export default function AdminMembersPage() {
         </div>
       )}
 
-      {/* 블랙 테마 토스트 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1C2B33] px-4 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
           <span>{toastMessage}</span>
-          <button
-            type="button"
-            onClick={() => setToastMessage('')}
-            className="text-xs text-white/50 hover:text-white"
-          >
+          <button type="button" onClick={() => setToastMessage('')} className="text-xs text-white/50 hover:text-white">
             ✕
           </button>
         </div>

@@ -32,20 +32,54 @@ export async function GET(req: NextRequest) {
       if (dow === 4) thuCount++;
     });
 
-    if (dates.length === 0) {
+    // 2. 🎯 해당 기수(`term`)에 등록된 회원 목록 조회 (term_members 기준)
+    const { data: termMembers, error: tmErr } = await supabaseAdmin
+      .from('term_members')
+      .select('employee_no, lesson_day')
+      .eq('term_month', term);
+
+    if (tmErr) throw tmErr;
+
+    const employeeNos = (termMembers || []).map((tm) => tm.employee_no).filter(Boolean);
+
+    // 3. members 마스터에서 해당 사번들의 인적사항 조회
+    let masterMembers: any[] = [];
+    if (employeeNos.length > 0) {
+      const { data: mems, error: mErr } = await supabaseAdmin
+        .from('members')
+        .select('id, name, employee_no')
+        .in('employee_no', employeeNos)
+        .order('name', { ascending: true });
+
+      if (mErr) throw mErr;
+      masterMembers = mems || [];
+    }
+
+    // term_members 정보와 members 인적사항을 employee_no 기준으로 병합
+    const activeMembers = masterMembers.map((m) => {
+      const tm = termMembers.find((t) => t.employee_no === m.employee_no);
+      return {
+        id: m.id,
+        name: m.name,
+        employee_no: m.employee_no,
+        lesson_day: (tm?.lesson_day || 'TUE') as 'TUE' | 'THU' | 'BOTH',
+      };
+    });
+
+    if (dates.length === 0 || activeMembers.length === 0) {
       return NextResponse.json({
         term,
-        totalDates: 0,
-        tueCount: 0,
-        thuCount: 0,
+        totalDates: dates.length,
+        tueCount,
+        thuCount,
         tueAbsentCount: 0,
         thuAbsentCount: 0,
-        dates: [],
+        dates,
         members: [],
       });
     }
 
-    // 2. 해당 기수 레슨일들에 배정된 lessons 데이터 조회
+    // 4. 해당 기수 레슨일들에 배정된 lessons 데이터 조회
     const { data: lessonData, error: lErr } = await supabaseAdmin
       .from('lessons')
       .select('member_id, lesson_date, is_completed, is_swap')
@@ -55,7 +89,6 @@ export async function GET(req: NextRequest) {
     const lessons = lessonData || [];
 
     // 🎯 한국 시간(Asia/Seoul) 기준 오늘 날짜(YYYY-MM-DD) 추출
-    // UTC 기준 시 아침 9시까지 전날로 잡히던 문제를 해결하여 자정 직후 즉시 반영
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
     let tueAbsentCount = 0;
     let thuAbsentCount = 0;
@@ -69,39 +102,14 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    if (lessons.length === 0) {
-      return NextResponse.json({
-        term,
-        totalDates: dates.length,
-        tueCount,
-        thuCount,
-        tueAbsentCount: 0,
-        thuAbsentCount: 0,
-        dates,
-        members: [],
-      });
-    }
-
-    // 3. 해당 기수 레슨에 실제로 배정된 회원 ID 목록 추출
-    const activeMemberIds = Array.from(new Set(lessons.map((l) => l.member_id)));
-
-    // 4. 배정된 회원 정보 조회 (DB 원 소속 요일 lesson_day 확인)
-    const { data: members, error: memErr } = await supabaseAdmin
-      .from('members')
-      .select('id, name, lesson_day')
-      .in('id', activeMemberIds)
-      .order('name', { ascending: true });
-
-    if (memErr) throw memErr;
-
-    // 5. 회원별 요일 판별 및 퐁당퐁당 출석/결석 집계
-    const memberStats = (members || []).map((m) => {
-      // 날짜 순서대로 정렬
+    // 5. 회원별 요일 판별 및 출석/결석 집계
+    const memberStats = activeMembers.map((m) => {
+      // 날짜 순서대로 정렬된 본인 레슨 내역
       const myLessons = lessons
         .filter((l) => l.member_id === m.id)
         .sort((a, b) => a.lesson_date.localeCompare(b.lesson_date));
 
-      const baseLessonDay = (m.lesson_day || 'TUE') as 'TUE' | 'THU' | 'BOTH';
+      const baseLessonDay = m.lesson_day;
       let resolvedLessonDay: 'TUE' | 'THU' | 'BOTH' = baseLessonDay;
 
       if (baseLessonDay === 'BOTH' && myLessons.length > 4) {
@@ -117,11 +125,9 @@ export async function GET(req: NextRequest) {
         });
         resolvedLessonDay = tCount >= thCount ? 'TUE' : 'THU';
       } else {
-        // 단일 요일 회원은 스왑과 무관하게 본래 요일 고정
         resolvedLessonDay = baseLessonDay;
       }
 
-      // 개인별 총 출석/결석
       const completedCount = myLessons.filter((l) => l.is_completed).length;
       const absentCount = myLessons.filter((l) => l.lesson_date < today && !l.is_completed).length;
 
@@ -131,25 +137,19 @@ export async function GET(req: NextRequest) {
       let thuAbsentCountIndiv = 0;
 
       if (resolvedLessonDay === 'BOTH') {
-        // 🎯 BOTH 회원은 날짜순으로 인덱스를 따라 퐁당퐁당 분배
-        // index 0, 2, 4, 6 -> 화요일 세션 슬롯
-        // index 1, 3, 5, 7 -> 목요일 세션 슬롯
         myLessons.forEach((l, idx) => {
           const isCompleted = !!l.is_completed;
           const isAbsent = l.lesson_date < today && !isCompleted;
 
           if (idx % 2 === 0) {
-            // 화요일 몫
             if (isCompleted) tueCompletedCount++;
             if (isAbsent) tueAbsentCountIndiv++;
           } else {
-            // 목요일 몫
             if (isCompleted) thuCompletedCount++;
             if (isAbsent) thuAbsentCountIndiv++;
           }
         });
       } else {
-        // 단일 요일 회원은 본인 총 횟수 그대로 배분
         if (resolvedLessonDay === 'TUE') {
           tueCompletedCount = completedCount;
           tueAbsentCountIndiv = absentCount;
