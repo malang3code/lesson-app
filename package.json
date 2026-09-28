@@ -2,9 +2,9 @@
   "name": "lesson-app",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+"scripts": {
     "dev": "next dev --webpack",
-    "build": "npm install --ignore-scripts && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
