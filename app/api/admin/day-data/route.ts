@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
 
     const assignedMemberIdSet = new Set((lessons ?? []).map((l) => l.member_id));
 
-    // 6. 화요일/목요일 요일별 수강생 필터링 규칙 적용
+    // 6. 요일별 기본 필터링 명단과 기수 전체 명단 각각 생성
     const isTuesday = dow === 2;
     const isThursday = dow === 4;
 
@@ -121,8 +121,24 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    // 배정 가능한 회원 목록 생성
+    // 🎯 기본 요일 맞춤 회원 목록 (예외 버튼 안 눌렀을 때)
     const eligibleMembers = filteredMembers.map((m) => {
+      const sameNames = nameMap.get(m.name) || [];
+      const dispName = buildDisplayName(m, sameNames);
+      return {
+        id: m.id,
+        name: dispName,
+        rawName: m.name,
+        department: m.department,
+        phone: m.phone,
+        employee_no: m.employee_no,
+        lesson_day: m.lesson_day,
+        alreadyAssignedToday: assignedMemberIdSet.has(m.id),
+      };
+    });
+
+    // 🎯 기수 전체 회원 목록 (예외 버튼 눌렀을 때 다른 요일도 포함하기 위함)
+    const allEligibleMembers = activeMembers.map((m) => {
       const sameNames = nameMap.get(m.name) || [];
       const dispName = buildDisplayName(m, sameNames);
       return {
@@ -165,7 +181,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       slots: formattedSlots,
-      eligibleMembers,
+      eligibleMembers,     // 기본 요일 맞춤 회원
+      allEligibleMembers,  // 🎯 예외 시 사용할 기수 전체 회원
     });
   } catch (err: unknown) {
     console.error("🔥 /api/admin/day-data ERROR:", err);

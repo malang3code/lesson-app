@@ -21,6 +21,7 @@ export default function AdminAssignPage() {
   const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
   const [dataDate, setDataDate] = useState<string | null>(null); // 🎯 현재 슬롯 데이터의 실제 날짜
   const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
+  const [allEligibleMembers, setAllEligibleMembers] = useState<Member[]>([]); // 🎯 기수 전체 회원 명단 추가
   const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -199,6 +200,7 @@ export default function AdminAssignPage() {
       setOriginalSlots([]);
       setDataDate(null);
       setEligibleMembers([]);
+      setAllEligibleMembers([]);
       return;
     }
     setLoading(true);
@@ -213,6 +215,7 @@ export default function AdminAssignPage() {
       setOriginalSlots(newSlots);
       setDataDate(targetDate);
       setEligibleMembers(data.eligibleMembers ?? []);
+      setAllEligibleMembers(data.allEligibleMembers ?? data.eligibleMembers ?? []); // 🎯 전체 회원 목록 세팅
     } catch {
       showToast('네트워크 오류');
     } finally {
@@ -224,7 +227,8 @@ export default function AdminAssignPage() {
 
   const handleAssign = (slotId: number, memberIdStr: string) => {
     const memberId = Number(memberIdStr);
-    const target = eligibleMembers.find((m) => m.id === memberId);
+    // 🎯 예외 버튼이 켜진 슬롯일 수 있으므로 전체 회원 목록(allEligibleMembers)에서 먼저 찾고 없으면 기본 목록에서 찾기
+    const target = allEligibleMembers.find((m) => m.id === memberId) || eligibleMembers.find((m) => m.id === memberId);
     if (!target) return;
     setSlots((prev) =>
       prev.map((s) =>
@@ -352,7 +356,6 @@ export default function AdminAssignPage() {
     setCapturing(true);
     showToast('이미지 생성 중...');
     try {
-      // 🎯 filter 옵션: '변경' 버튼과 '원복' 버튼은 캡처 이미지에서만 완벽히 제외
       const dataUrl = await toPng(captureRef.current, {
         cacheBust: true,
         pixelRatio: 2,
@@ -443,7 +446,9 @@ export default function AdminAssignPage() {
         onRevertSwapHistory={handleRevertSwapHistory}
         showDetailInfo={showDetailInfo}
         onToggleDetailInfo={() => setShowDetailInfo((v) => !v)}
+        // 🎯 예외 버튼(showAllOverride)이 켜졌을 때는 allEligibleMembers를 전달하여 요일 제한 해제!
         eligibleMembers={eligibleMembers}
+        allEligibleMembers={allEligibleMembers}
         showAllOverride={showAllOverride}
         onToggleOverride={(slotId) => setShowAllOverride((prev) => ({ ...prev, [slotId]: !prev[slotId] }))}
         onAssign={handleAssign}
@@ -456,7 +461,16 @@ export default function AdminAssignPage() {
         validCopyDates={rawDates.filter((d) => d.slice(0, 7) >= currentYm && d !== selectedDate).sort()}
         copying={copying}
         onRunCopy={runCopy}
-        onResetDay={() => confirm('배정을 모두 비우시겠습니까?') && setSlots((p) => p.map((s) => ({ ...s, assigned: [] })))}
+        onResetDay={() => {
+        // 🎯 변경 이력이 존재하면 비우기 차단 및 안내 알림
+        if (swapHistories && swapHistories.length > 0) {
+          alert('변경 이력이 있으므로, 모두 원복 후 비우기가 가능합니다.');
+          return;
+        }
+        if (confirm('배정을 모두 비우시겠습니까?')) {
+          setSlots((p) => p.map((s) => ({ ...s, assigned: [] })));
+        }
+      }}
         isDirty={isDirty}
         saving={saving}
         showSaveBar={showSaveBar}

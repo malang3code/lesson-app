@@ -107,6 +107,7 @@ interface LessonScheduleViewProps {
   onToggleDetailInfo?: () => void;
   // 초기 배정 및 수동 관리 (관리자 전용)
   eligibleMembers?: Member[];
+  allEligibleMembers?: Member[]; // 🎯 기수 전체 회원 명단 추가
   showAllOverride?: Record<number, boolean>;
   onToggleOverride?: (slotId: number) => void;
   onAssign?: (slotId: number, memberId: string) => void;
@@ -408,7 +409,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
             <div className="absolute top-3.5 bottom-3.5 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[60px]" />
 
             <div className="space-y-2">
-              {/* 🎯 로딩 중일 때는 잔상 슬롯을 절대 렌더링하지 않음 */}
               {props.loading ? (
                 <div className="py-12 text-center text-sm font-medium text-[#1C2B33]/40 animate-pulse">
                   시간표 불러오는 중...
@@ -419,7 +419,12 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   const capacity = slot.capacity || 2;
                   const isExceptionActive = !!props.showAllOverride?.[slot.id];
 
-                  const options = (props.eligibleMembers || []).filter((m) => {
+                  // 🎯 [핵심 수정] 예외 버튼(isExceptionActive)이 켜지면 allEligibleMembers를 사용하여 전체 기수 회원을 대상으로 옵션 구성
+                  const targetMemberPool = isExceptionActive 
+                    ? (props.allEligibleMembers || props.eligibleMembers || []) 
+                    : (props.eligibleMembers || []);
+
+                  const options = targetMemberPool.filter((m) => {
                     if (isExceptionActive) return true;
                     if (assignedMemberIds.has(m.id)) return false;
                     const memberDay = m.lesson_day || 'TUE';
@@ -459,7 +464,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                             const isCompleted = !!a.isCompleted;
                             const memDay = a.lesson_day || 'TUE';
 
-                            // 🎯 [핵심 방어] 로딩 중이 아닐 때만 교차 요일 뱃지 계산
                             const isCrossDay =
                               !props.loading &&
                               memDay !== 'BOTH' &&
@@ -474,13 +478,12 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                   (props.swapModeActive
                                     ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] ring-1 ring-[#1F6F63]/20 hover:scale-105'
                                     : isCompleted
-                                    ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] font-semibold ring-1 ring-[#1F6F63]/30 shadow-xs' // 🎯 [핵심 수정] 출석 완료 시 시그니처 초록 테두리 & 링 적용
+                                    ? 'border-[#1F6F63] bg-[#E8F3EE] text-[#1F6F63] font-semibold ring-1 ring-[#1F6F63]/30 shadow-xs'
                                     : isCrossDay
                                     ? 'bg-[#FFF8E7] text-[#C98A2B] border-[#C98A2B]/40 font-medium'
                                     : 'bg-[#FAFAF7] text-[#1C2B33] border-[#1C2B33]/10 hover:bg-[#1C2B33]/5')
                                 }
                               >
-                                {/* 🎯 출석 완료 시 좌측 초록 체크 표시 */}
                                 {isCompleted && !props.swapModeActive && (
                                   <span className="text-xs font-bold text-[#1F6F63]">✓</span>
                                 )}
@@ -499,7 +502,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                                     (props.swapModeActive
                                       ? 'text-[#1F6F63] font-bold'
                                       : isCompleted
-                                      ? 'text-[#1F6F63] font-bold' // 🎯 초록 텍스트 유지
+                                      ? 'text-[#1F6F63] font-bold'
                                       : isCrossDay
                                       ? 'text-[#A06C18]'
                                       : 'text-[#1C2B33]')
