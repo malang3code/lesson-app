@@ -64,8 +64,9 @@ export default function ApplicationsSettingsPage() {
   const [originalApplications, setOriginalApplications] = useState<Application[]>([]);
   
   const defaultTerms = useMemo(() => getDefaultTargetTerms(), []);
-  const [selectedTerm, setSelectedTerm] = useState<string>(defaultTerms[1]);
   
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => defaultTerms[2]);
+
   const [viewMode, setViewMode] = useState<ViewMode>('default');
 
   const [loading, setLoading] = useState(true);
@@ -99,35 +100,82 @@ export default function ApplicationsSettingsPage() {
     return availableTermsInDb.filter((t) => !quickTerms.includes(t));
   }, [availableTermsInDb, quickTerms]);
 
-  const loadApplications = useCallback(async () => {
+  // 희망 요일 순서 가중치 정의 (화요일 -> 화/목 -> 목요일 순서)
+  const getDayPriority = (day: PreferredDay): number => {
+    if (day === 'TUE' || day === 'TUE_ONLY') return 1;
+    if (day === 'BOTH' || day === 'ANY') return 2;
+    if (day === 'THU' || day === 'THU_ONLY') return 3;
+    return 4;
+  };
+
+  // 다중 정렬 로직 (희망순서 ➔ 1순위 ➔ 2순위 ➔ 이름)
+  const sortApplications = (list: Application[]): Application[] => {
+    return [...list].sort((a, b) => {
+      const pA = getDayPriority(a.preferred_day);
+      const pB = getDayPriority(b.preferred_day);
+      if (pA !== pB) return pA - pB;
+
+      const t1A = a.preferred_time_1 || '';
+      const t1B = b.preferred_time_1 || '';
+      if (t1A !== t1B) return t1A.localeCompare(t1B);
+
+      const t2A = a.preferred_time_2 || '';
+      const t2B = b.preferred_time_2 || '';
+      if (t2A !== t2B) return t2A.localeCompare(t2B);
+
+      const nameA = a.name || '';
+      const nameB = b.name || '';
+      return nameA.localeCompare(nameB);
+    });
+  };
+
+  const loadApplications = useCallback(async (termToFetch: string) => {
     setLoading(true);
     try {
-      const url = `/api/admin/applications?term=${encodeURIComponent(selectedTerm)}`;
+      const url = `/api/admin/applications?term=${encodeURIComponent(termToFetch)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (res.ok) {
-        const list: Application[] = (data.applications ?? []).map((item: any) => ({
+        const rawList: Application[] = (data.applications ?? []).map((item: any) => ({
           ...item,
           editStatus: item.status,
           editLessonDay: (item.lesson_day as LessonDay) || mapPreferredToLessonDay(item.preferred_day),
         }));
-        setApplications(list);
-        setOriginalApplications(JSON.parse(JSON.stringify(list)));
+
+        const sortedList = sortApplications(rawList);
+
+        setApplications(sortedList);
+        setOriginalApplications(JSON.parse(JSON.stringify(sortedList)));
+        return sortedList.length;
       } else {
         showToast(data.error || '조회 실패');
+        return 0;
       }
     } catch {
       showToast('네트워크 오류');
+      return 0;
     } finally {
       setLoading(false);
     }
-  }, [selectedTerm, showToast]);
+  }, [showToast]);
 
   useEffect(() => {
-    loadApplications();
-  }, [loadApplications]);
+    const initLoad = async () => {
+      const nextMonthTerm = defaultTerms[2];
+      const currentMonthTerm = defaultTerms[1];
 
-  const handleSelectTerm = (term: string) => {
+      const nextCount = await loadApplications(nextMonthTerm);
+      if (nextCount === 0) {
+        setSelectedTerm(currentMonthTerm);
+        await loadApplications(currentMonthTerm);
+      } else {
+        setSelectedTerm(nextMonthTerm);
+      }
+    };
+    initLoad();
+  }, [defaultTerms, loadApplications]);
+
+  const handleSelectTerm = async (term: string) => {
     const isTermSetUp = availableTermsInDb.includes(term);
 
     if (!isTermSetUp) {
@@ -142,6 +190,7 @@ export default function ApplicationsSettingsPage() {
     }
 
     setSelectedTerm(term);
+    await loadApplications(term);
   };
 
   const dirtyMap = useMemo(() => {
@@ -201,7 +250,7 @@ export default function ApplicationsSettingsPage() {
       if (res.ok) {
         showToast('신청 내역 변경 및 배정 요일이 일괄 저장되었습니다.');
         setOriginalApplications(JSON.parse(JSON.stringify(applications)));
-        loadApplications();
+        await loadApplications(selectedTerm);
       } else {
         showToast(data.error || '일괄 저장 실패');
       }
@@ -236,7 +285,7 @@ export default function ApplicationsSettingsPage() {
     }
   };
 
-  const totalColumns = viewMode === 'default' ? 7 : 5;
+  const totalColumns = viewMode === 'default' ? 8 : 6;
 
   return (
     <div className="max-w-xl space-y-3 pb-20 text-xs">
@@ -246,8 +295,7 @@ export default function ApplicationsSettingsPage() {
           <span className="font-bold text-[#1C2B33]/60 mr-0.5">기수:</span>
           
           {quickTerms.map((t) => {
-            const isCurrentMonth = t === defaultTerms[1];
-            const label = isCurrentMonth ? `${t} (이번달)` : t;
+            const label = t;
             return (
               <button
                 key={t}
@@ -331,17 +379,19 @@ export default function ApplicationsSettingsPage() {
                   <th className="py-2.5 px-2 text-center">사번</th>
                   <th className="py-2.5 px-2 text-center">이름</th>
                   <th className="py-2.5 px-2 text-center">희망</th>
-                  <th className="py-2.5 px-2 text-center">선호</th>
+                  <th className="py-2.5 px-2 text-center">1순위</th>
+                  <th className="py-2.5 px-2 text-center">2순위</th>
                   <th className="py-2.5 px-2 text-center">상태</th>
                   <th className="py-2.5 px-2 text-center">확정</th>
                   <th className="py-2.5 px-2 text-center">삭제</th>
                 </>
               ) : (
                 <>
-                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[90px]">사번</th>
-                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[70px]">이름</th>
-                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[60px]">상태</th>
-                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[75px]">확정</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[70px]">사번</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[50px]">이름</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[50px]">상태</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[60px]">확정</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap w-[60px]">1순위</th>
                   <th className="py-2.5 px-3 text-left w-full">요청사항</th>
                 </>
               )}
@@ -365,9 +415,6 @@ export default function ApplicationsSettingsPage() {
                 const isApproved = item.editStatus === 'ON';
                 const isChanged = dirtyMap.has(item.id);
                 const dayBadge = getDayBadge(item.preferred_day);
-                const timeText = [item.preferred_time_1, item.preferred_time_2]
-                  .filter(Boolean)
-                  .join(' / ');
 
                 return (
                   <tr
@@ -383,15 +430,16 @@ export default function ApplicationsSettingsPage() {
                   >
                     {viewMode === 'default' ? (
                       <>
-                        <td className="py-2 px-2 font-semibold text-[#1C2B33] whitespace-nowrap">{item.employee_no}</td>
-                        <td className="py-2 px-2 font-medium text-[#1C2B33] whitespace-nowrap">{item.name}</td>
-                        <td className="py-2 px-2 whitespace-nowrap">
+                        <td className="py-2 px-1.5 font-semibold text-[#1C2B33] whitespace-nowrap">{item.employee_no}</td>
+                        <td className="py-2 px-1.5 font-medium text-[#1C2B33] whitespace-nowrap">{item.name}</td>
+                        <td className="py-2 px-1.5 whitespace-nowrap">
                           <span className={'rounded px-1.5 py-0.5 text-[10px] font-bold ' + dayBadge.bg}>
                             {dayBadge.label}
                           </span>
                         </td>
-                        <td className="py-2 px-2 font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">{timeText || '-'}</td>
-                        <td className="py-2 px-2 whitespace-nowrap">
+                        <td className="py-2 px-1.5 font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">{item.preferred_time_1 || '-'}</td>
+                        <td className="py-2 px-1.5 font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap">{item.preferred_time_2 || '-'}</td>
+                        <td className="py-2 px-1.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => handleToggleStatus(item.id)}
@@ -405,7 +453,7 @@ export default function ApplicationsSettingsPage() {
                             {isApproved ? 'ON' : 'OFF'}
                           </button>
                         </td>
-                        <td className="py-2 px-2 whitespace-nowrap">
+                        <td className="py-2 px-1.5 whitespace-nowrap">
                           <select
                             value={item.editLessonDay}
                             onChange={(e) => handleChangeLessonDay(item.id, e.target.value as LessonDay)}
@@ -422,7 +470,7 @@ export default function ApplicationsSettingsPage() {
                             <option value="BOTH">화/목</option>
                           </select>
                         </td>
-                        <td className="py-2 px-2 whitespace-nowrap">
+                        <td className="py-2 px-1.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => handleDeleteApplication(item.id, item.name, item.employee_no)}
@@ -467,7 +515,10 @@ export default function ApplicationsSettingsPage() {
                             <option value="BOTH">화/목</option>
                           </select>
                         </td>
-                        <td className="py-2 px-3 text-left text-[#1C2B33]/80 font-normal whitespace-nowrap overflow-hidden text-ellipsis max-w-[280px]">
+                        <td className="py-2 px-1 font-[family-name:var(--font-mono-club)] text-[#1C2B33]/70 whitespace-nowrap text-center">
+                          {item.preferred_time_1 || '-'}
+                        </td>
+                        <td className="py-2 px-3 text-left text-[#1C2B33]/80 font-normal whitespace-nowrap overflow-hidden text-ellipsis max-w-[180px]">
                           {item.notes || '-'}
                         </td>
                       </>
