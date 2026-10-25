@@ -1,28 +1,24 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import AdminDrawer from '@/components/AdminDrawer';
-import LessonScheduleView, { Slot, Member, AssignedItem, SwapHistoryItem } from '@/components/LessonScheduleView';
+import ViewerDrawer from '@/components/ViewerDrawer';
+import LessonScheduleView, { Slot, AssignedItem, SwapHistoryItem } from '@/components/LessonScheduleView';
 import LessonSwapModal, { SwapTargetInfo } from '@/components/LessonSwapModal';
 import { useScheduleSaveBar } from '@/hooks/useScheduleSaveBar';
 import { toPng } from 'html-to-image';
 
-export default function AdminAssignPage() {
+export default function ViewerAssignPage() {
   const [rawDates, setRawDates] = useState<string[]>([]);
   const [showPast, setShowPast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [showDetailInfo, setShowDetailInfo] = useState(false);
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
   const [dataDate, setDataDate] = useState<string | null>(null); // 🎯 현재 슬롯 데이터의 실제 날짜
-  const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
-  const [allEligibleMembers, setAllEligibleMembers] = useState<Member[]>([]); // 🎯 기수 전체 회원 명단 추가
-  const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
@@ -37,10 +33,6 @@ export default function AdminAssignPage() {
   } | null>(null);
 
   const captureRef = useRef<HTMLDivElement>(null);
-
-  const [copyPanelOpen, setCopyPanelOpen] = useState(false);
-  const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
-  const [copying, setCopying] = useState(false);
 
   // 🎯 해당 날짜 스왑 이력 로드
   const loadSwapHistories = useCallback(async (date: string | null) => {
@@ -63,7 +55,11 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 저장 바 훅 연결
+  // 🎯 데이터 준비 완료 판정 (현재 선택된 날짜와 데이터 날짜가 일치하고 로딩 중이 아닐 때)
+  const isDataReady = selectedDate !== null && dataDate === selectedDate && !loading;
+  const emptySlots: Slot[] = useMemo(() => [], []);
+
+  // 🎯 공통 훅 연결 (데이터 준비 전에는 빈 배열 전달하여 isDirty 오류 방어)
   const {
     isDirty: rawIsDirty,
     showSaveBar,
@@ -74,8 +70,8 @@ export default function AdminAssignPage() {
     handleRevert,
     handleSave,
   } = useScheduleSaveBar({
-    currentData: slots,
-    originalData: originalSlots,
+    currentData: isDataReady ? slots : emptySlots,
+    originalData: isDataReady ? originalSlots : emptySlots,
     onRevertCallback: () => {
       setSlots(originalSlots);
       setPendingSwap(null);
@@ -113,34 +109,26 @@ export default function AdminAssignPage() {
         }))
       );
 
-      // 🎯 각 슬롯의 변경된 시작 시간 함께 전송
-      const slotUpdates = slots.map((slot) => ({
-        id: slot.id,
-        start_time: slot.start_time,
-      }));
-
       const res = await fetch('/api/admin/lessons/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lessonDate: selectedDate,
           assignments,
-          slots: slotUpdates,
         }),
       });
 
-      if (res.ok) {
-        setOriginalSlots(slots);
-        return true;
-      } else {
-        showToast('저장 실패');
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || '저장 실패');
         return false;
       }
+
+      setOriginalSlots(slots);
+      return true;
     },
   });
 
-  // 🎯 [방어 1] 현재 데이터가 선택된 날짜와 일치하지 않거나 로딩 중이면 isDirty는 무조건 false
-  const isDataReady = selectedDate !== null && dataDate === selectedDate && !loading;
   const isDirty = useMemo(() => {
     if (!isDataReady) return false;
     return rawIsDirty;
@@ -195,9 +183,11 @@ export default function AdminAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
-  // 🎯 [방어 2] 날짜 전환 시 확인 팝업 (실제 데이터가 준비되어 있고 dirty일 때만)
+  // 🎯 [핵심] isDataReady가 참일 때만 isDirty 검사를 수행하여 빠른 연타 시 팝업 발생 차단
   const confirmSwitchDate = (newDate: string) => {
-    if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) return;
+    if (isDataReady && isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) {
+      return;
+    }
     setSelectedDate(newDate);
     const [y, m] = newDate.split('-').map(Number);
     setCalYear(y);
@@ -205,14 +195,11 @@ export default function AdminAssignPage() {
     setSwapModeActive(false);
   };
 
-  // 🎯 [방어 3] 데이터 로드 시 동기화 (dataDate를 통해 날짜 일치 여부 보장)
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
       setOriginalSlots([]);
       setDataDate(null);
-      setEligibleMembers([]);
-      setAllEligibleMembers([]);
       return;
     }
     setLoading(true);
@@ -220,14 +207,14 @@ export default function AdminAssignPage() {
       const targetDate = selectedDate;
       const res = await fetch('/api/admin/day-data?date=' + targetDate);
       const data = await res.json();
-      if (!res.ok) { showToast(data.error || '조회 실패'); return; }
-      
+      if (!res.ok) {
+        showToast(data.error || '조회 실패');
+        return;
+      }
       const newSlots = data.slots ?? [];
       setSlots(newSlots);
       setOriginalSlots(newSlots);
       setDataDate(targetDate);
-      setEligibleMembers(data.eligibleMembers ?? []);
-      setAllEligibleMembers(data.allEligibleMembers ?? data.eligibleMembers ?? []);
     } catch {
       showToast('네트워크 오류');
     } finally {
@@ -235,73 +222,16 @@ export default function AdminAssignPage() {
     }
   }, [selectedDate, showToast]);
 
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // 🎯 각 슬롯별 시간 변경 핸들러 추가
-  const handleTimeChange = (slotId: number, newStartTime: string) => {
-    setSlots((prev) =>
-      prev.map((s) => {
-        if (s.id !== slotId) return s;
-        // 종료 시간 자동 계산 (+30분)
-        const [h, m] = newStartTime.split(':').map(Number);
-        let endH = h;
-        let endM = m + 30;
-        if (endM >= 60) {
-          endH += 1;
-          endM -= 60;
-        }
-        const newEndTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-        return {
-          ...s,
-          start_time: newStartTime,
-          end_time: newEndTime,
-        };
-      })
-    );
-  };
-
-  const handleAssign = (slotId: number, memberIdStr: string) => {
-    const memberId = Number(memberIdStr);
-    const target = allEligibleMembers.find((m) => m.id === memberId) || eligibleMembers.find((m) => m.id === memberId);
-    if (!target) return;
-    setSlots((prev) =>
-      prev.map((s) =>
-        s.id !== slotId
-          ? s
-          : {
-              ...s,
-              assigned: [
-                ...(s.assigned || []),
-                {
-                  lessonId: `temp-${Date.now()}-${Math.random()}`,
-                  memberId: target.id,
-                  name: target.name,
-                  department: target.department,
-                  phone: target.phone,
-                  lesson_day: target.lesson_day,
-                  isCompleted: false,
-                },
-              ],
-            }
-      )
-    );
-  };
-
-  const handleRemove = (lessonId: number | string) => {
-    setSlots((prev) =>
-      prev.map((s) => ({
-        ...s,
-        assigned: (s.assigned || []).filter((a) => String(a.lessonId) !== String(lessonId)),
-      }))
-    );
-  };
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleToggleCompleted = (lessonId: number | string) => {
     setSlots((prev) =>
       prev.map((s) => ({
         ...s,
         assigned: (s.assigned || []).map((a) =>
-          String(a.lessonId) === String(lessonId) ? { ...a, isCompleted: !a.isCompleted } : a
+          a.lessonId === lessonId ? { ...a, isCompleted: !a.isCompleted } : a
         ),
       }))
     );
@@ -365,7 +295,7 @@ export default function AdminAssignPage() {
 
     setSwapModalOpen(false);
     setSwapModeActive(false);
-    showToast(`${swapSourceInfo.memberName} ⟷ ${target.memberName} 변경 준비 완료 (하단 저장 클릭)`);
+    showToast(`${swapSourceInfo.memberName} ⟷ ${target.memberName} 맞교환 준비 완료 (하단 저장 클릭)`);
   };
 
   const handleRevertSwapHistory = async (historyId: number) => {
@@ -390,20 +320,7 @@ export default function AdminAssignPage() {
     setCapturing(true);
     showToast('이미지 생성 중...');
     try {
-      const dataUrl = await toPng(captureRef.current, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: '#FAFAF7',
-        filter: (node: HTMLElement) => {
-          if (node.tagName === 'BUTTON') {
-            const text = node.textContent?.trim() || '';
-            if (text.includes('변경') || text.includes('원복')) {
-              return false;
-            }
-          }
-          return true;
-        },
-      });
+      const dataUrl = await toPng(captureRef.current, { cacheBust: true, pixelRatio: 2, backgroundColor: '#FAFAF7' });
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const file = new File([blob], `lesson-${selectedDate}.png`, { type: 'image/png' });
@@ -422,34 +339,11 @@ export default function AdminAssignPage() {
     }
   };
 
-  const runCopy = async () => {
-    if (!selectedDate || copyTargets.size === 0 || isDirty) return;
-    setCopying(true);
-    try {
-      const res = await fetch('/api/admin/lessons/copy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromDate: selectedDate, toDates: Array.from(copyTargets) }),
-      });
-      if (res.ok) {
-        showToast('선택한 날짜에 성공적으로 복사되었습니다.');
-        setCopyTargets(new Set());
-        setCopyPanelOpen(false);
-      } else {
-        showToast('복사 실패');
-      }
-    } catch {
-      showToast('네트워크 오류');
-    } finally {
-      setCopying(false);
-    }
-  };
-
   return (
     <>
       <LessonScheduleView
-        mode="admin"
-        drawer={<AdminDrawer />}
+        mode="viewer"
+        drawer={<ViewerDrawer />}
         selectedDate={selectedDate}
         slots={isDataReady ? slots : []}
         loading={!isDataReady}
@@ -478,33 +372,7 @@ export default function AdminAssignPage() {
         onInitiateSwap={handleInitiateSwap}
         swapHistories={swapHistories}
         onRevertSwapHistory={handleRevertSwapHistory}
-        showDetailInfo={showDetailInfo}
-        onToggleDetailInfo={() => setShowDetailInfo((v) => !v)}
-        eligibleMembers={eligibleMembers}
-        allEligibleMembers={allEligibleMembers}
-        showAllOverride={showAllOverride}
-        onToggleOverride={(slotId) => setShowAllOverride((prev) => ({ ...prev, [slotId]: !prev[slotId] }))}
-        onAssign={handleAssign}
-        onRemove={handleRemove}
         onToggleCompleted={handleToggleCompleted}
-        copyPanelOpen={copyPanelOpen}
-        onToggleCopyPanel={() => setCopyPanelOpen((v) => !v)}
-        copyTargets={copyTargets}
-        onToggleCopyTarget={(d) => setCopyTargets((prev) => { const n = new Set(prev); n.has(d) ? n.delete(d) : n.add(d); return n; })}
-        validCopyDates={rawDates.filter((d) => d.slice(0, 7) >= currentYm && d !== selectedDate).sort()}
-        copying={copying}
-        onRunCopy={runCopy}
-        onResetDay={() => {
-          if (swapHistories && swapHistories.length > 0) {
-            alert('변경 이력이 있으므로, 모두 원복 후 비우기가 가능합니다.');
-            return;
-          }
-          if (confirm('배정을 모두 비우시겠습니까?')) {
-            setSlots((p) => p.map((s) => ({ ...s, assigned: [] })));
-          }
-        }}
-        // 🎯 시간 변경 핸들러 전달 (LessonScheduleView 내부에서 드롭다운으로 연동 가능)
-        onTimeChange={handleTimeChange}
         isDirty={isDirty}
         saving={saving}
         showSaveBar={showSaveBar}

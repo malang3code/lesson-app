@@ -158,6 +158,17 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
     props.slots.flatMap((s) => (s.assigned || []).map((a) => a.memberId))
   );
 
+  // 🎯 이미 다른 슬롯에서 사용 중인 시간대 세트 계산
+  const usedSlotTimes = useMemo(() => {
+    const set = new Set<string>();
+    props.slots.forEach((s) => {
+      if (s.start_time) {
+        set.add(s.start_time.slice(0, 5));
+      }
+    });
+    return set;
+  }, [props.slots]);
+
   const { completedCount, totalAssignedCount } = useMemo(() => {
     let completed = 0;
     let total = 0;
@@ -453,6 +464,11 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   const emptySlotsCount = Math.max(0, capacity - assignedList.length);
                   const startH = (slot.start_time || '').slice(0, 5);
 
+                  // 🎯 이미 사용 중인 시간은 제외하되, 현재 슬롯이 이미 갖고 있는 시간은 유지
+                  const filteredTimeOptions = timeOptions.filter(
+                    (t) => t === startH || !usedSlotTimes.has(t)
+                  );
+
                   return (
                     <div key={slot.id} className="relative flex items-center gap-2.5 sm:gap-3.5">
                       {/* 🎯 관리자 모드일 때는 너비를 넓히고 appearance 제거하여 드롭다운 선택 동작 보장 */}
@@ -464,7 +480,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                               onChange={(e) => props.onTimeChange?.(slot.id, e.target.value)}
                               className="h-[32px] w-full cursor-pointer rounded-md border border-[#1C2B33]/20 bg-white px-1 text-center font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#1C2B33] transition-colors hover:border-[#1C2B33]/50 focus:border-[#1C2B33] focus:outline-none"
                             >
-                              {timeOptions.map((timeStr) => (
+                              {filteredTimeOptions.map((timeStr) => (
                                 <option key={timeStr} value={timeStr}>
                                   {timeStr}
                                 </option>
