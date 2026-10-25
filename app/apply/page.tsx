@@ -7,8 +7,10 @@ interface RecruitmentSetting {
   is_open: boolean;
   current_term: string;
   notice?: string;
-  available_times?: string[];
 }
+
+// 🎯 고정된 30분 단위 시간 옵션 6개 (19:00 ~ 21:30)
+const FIXED_TIMES = ['19:00', '19:30', '20:00', '20:30', '21:00', '21:30'];
 
 // 🎯 UTF-8 바이트 수 계산 헬퍼 함수
 function getUtf8BytesLength(str: string): number {
@@ -126,7 +128,6 @@ export default function ApplyPage() {
   // 🎯 기타 요청사항 변경 핸들러 (최대 66바이트 제한)
   const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
-    // 한 글자씩 타이핑하면서 바이트 체크 (66바이트 초과 시 자르기 또는 입력 방지)
     let currentBytes = 0;
     let slicedVal = '';
 
@@ -243,7 +244,7 @@ export default function ApplyPage() {
               <span>현재 모집 기간이 아닙니다</span>
             </div>
             <p className="text-xs text-[#1C2B33]/65 leading-relaxed mb-6">
-              {setting?.notice || '현재는 레슨 수강생 모집 기간이 아닙니다. 다음 모집 공지를 확인해 주세요.'}
+              현재는 레슨 수강생 모집 기간이 아닙니다. 다음 모집 공지를 확인해 주세요.
             </p>
             <Link
               href="/"
@@ -288,7 +289,7 @@ export default function ApplyPage() {
               href="/"
               className="inline-flex h-9 w-full items-center justify-center rounded-xl bg-[#1F6F63] text-xs font-bold text-white shadow-2xs hover:bg-[#1F6F63]/90 active:scale-95 transition-all"
             >
-              확인
+              확정
             </Link>
           </div>
         </main>
@@ -296,7 +297,6 @@ export default function ApplyPage() {
     );
   }
 
-  const times = setting?.available_times || [];
   const notesByteLength = getUtf8BytesLength(notes);
 
   return (
@@ -481,7 +481,7 @@ export default function ApplyPage() {
                   </p>
                 </div>
 
-                {/* 4. 선호 시작 시간 드롭다운 */}
+                {/* 4. 고정 6개 시간 옵션 선택 드롭다운 (19:00 ~ 21:30) */}
                 <div className="pt-1">
                   <label className="block text-xs font-bold text-[#1C2B33] mb-1.5">
                     선호 시작 시간 (선택 / 시간표 편성 참고용)
@@ -493,10 +493,10 @@ export default function ApplyPage() {
                         <select
                           value={preferredTime1}
                           onChange={(e) => setPreferredTime1(e.target.value)}
-                          className="h-9 w-full appearance-none rounded-xl border border-[#1C2B33]/15 bg-[#FAFAF7]/60 pl-3 pr-6 text-xs font-semibold text-[#1C2B33] focus:border-[#1C2B33] focus:bg-white focus:outline-none transition-all"
+                          className="h-9 w-full appearance-none rounded-xl border border-[#1C2B33]/15 bg-[#FAFAF7]/60 pl-3 pr-6 text-xs font-semibold text-[#1C2B33] focus:border-[#1C2B33] focus:bg-white focus:outline-none transition-all cursor-pointer"
                         >
                           <option value="">선택 안 함</option>
-                          {times.map((t) => (
+                          {FIXED_TIMES.map((t) => (
                             <option key={`t1-${t}`} value={t}>
                               {t} 시작
                             </option>
@@ -514,10 +514,10 @@ export default function ApplyPage() {
                         <select
                           value={preferredTime2}
                           onChange={(e) => setPreferredTime2(e.target.value)}
-                          className="h-9 w-full appearance-none rounded-xl border border-[#1C2B33]/15 bg-[#FAFAF7]/60 pl-3 pr-6 text-xs font-semibold text-[#1C2B33] focus:border-[#1C2B33] focus:bg-white focus:outline-none transition-all"
+                          className="h-9 w-full appearance-none rounded-xl border border-[#1C2B33]/15 bg-[#FAFAF7]/60 pl-3 pr-6 text-xs font-semibold text-[#1C2B33] focus:border-[#1C2B33] focus:bg-white focus:outline-none transition-all cursor-pointer"
                         >
                           <option value="">선택 안 함</option>
-                          {times.map((t) => (
+                          {FIXED_TIMES.map((t) => (
                             <option key={`t2-${t}`} value={t}>
                               {t} 시작
                             </option>
