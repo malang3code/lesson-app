@@ -69,6 +69,20 @@ function formatCreatedAt(utcDateStr: string): string {
   }
 }
 
+// 🎯 19:00부터 21:45까지 15분 단위 시간 옵션 생성 헬퍼
+function generateTimeOptions() {
+  const options = [];
+  for (let hour = 19; hour <= 21; hour++) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      if (hour === 21 && minute > 45) break;
+      const h = String(hour).padStart(2, '0');
+      const m = String(minute).padStart(2, '0');
+      options.push(`${h}:${m}`);
+    }
+  }
+  return options;
+}
+
 interface LessonScheduleViewProps {
   mode: 'admin' | 'viewer';
   drawer: ReactNode;
@@ -113,6 +127,7 @@ interface LessonScheduleViewProps {
   onAssign?: (slotId: number, memberId: string) => void;
   onRemove?: (lessonId: number | string) => void;
   onToggleCompleted?: (lessonId: number | string) => void;
+  onTimeChange?: (slotId: number, newTime: string) => void; // 🎯 시간 변경 핸들러
   // 관리자 도구
   copyPanelOpen?: boolean;
   onToggleCopyPanel?: () => void;
@@ -134,6 +149,7 @@ interface LessonScheduleViewProps {
 export default function LessonScheduleView(props: LessonScheduleViewProps) {
   const isAdmin = props.mode === 'admin';
   const hasAssignments = props.slots.some((s) => (s.assigned || []).length > 0);
+  const timeOptions = useMemo(() => generateTimeOptions(), []);
 
   const [y, m, d] = props.selectedDate ? props.selectedDate.split('-').map(Number) : [0, 0, 0];
   const currentSelectedDow = props.selectedDate ? new Date(y, m - 1, d).getDay() : null;
@@ -406,7 +422,7 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
           )}
 
           <div className="relative">
-            <div className="absolute top-3.5 bottom-3.5 left-[52px] w-px bg-[#1C2B33]/10 sm:left-[60px]" />
+            <div className="absolute top-3.5 bottom-3.5 left-[72px] w-px bg-[#1C2B33]/10 sm:left-[80px]" />
 
             <div className="space-y-2">
               {props.loading ? (
@@ -419,7 +435,6 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
                   const capacity = slot.capacity || 2;
                   const isExceptionActive = !!props.showAllOverride?.[slot.id];
 
-                  // 🎯 [핵심 수정] 예외 버튼(isExceptionActive)이 켜지면 allEligibleMembers를 사용하여 전체 기수 회원을 대상으로 옵션 구성
                   const targetMemberPool = isExceptionActive 
                     ? (props.allEligibleMembers || props.eligibleMembers || []) 
                     : (props.eligibleMembers || []);
@@ -440,10 +455,27 @@ export default function LessonScheduleView(props: LessonScheduleViewProps) {
 
                   return (
                     <div key={slot.id} className="relative flex items-center gap-2.5 sm:gap-3.5">
-                      <div className="w-[52px] shrink-0 text-right sm:w-[60px]">
-                        <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-lg whitespace-nowrap">
-                          {startH}
-                        </span>
+                      {/* 🎯 관리자 모드일 때는 너비를 넓히고 appearance 제거하여 드롭다운 선택 동작 보장 */}
+                      <div className="w-[72px] shrink-0 text-right sm:w-[80px]">
+                        {isAdmin ? (
+                          <div className="relative inline-block w-full">
+                            <select
+                              value={startH}
+                              onChange={(e) => props.onTimeChange?.(slot.id, e.target.value)}
+                              className="h-[32px] w-full cursor-pointer rounded-md border border-[#1C2B33]/20 bg-white px-1 text-center font-[family-name:var(--font-mono-club)] text-xs font-bold text-[#1C2B33] transition-colors hover:border-[#1C2B33]/50 focus:border-[#1C2B33] focus:outline-none"
+                            >
+                              {timeOptions.map((timeStr) => (
+                                <option key={timeStr} value={timeStr}>
+                                  {timeStr}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="font-[family-name:var(--font-mono-club)] text-base font-bold sm:text-lg whitespace-nowrap">
+                            {startH}
+                          </span>
+                        )}
                       </div>
 
                       <div

@@ -498,7 +498,7 @@ export default function ApplyPage() {
                           <option value="">선택 안 함</option>
                           {FIXED_TIMES.map((t) => (
                             <option key={`t1-${t}`} value={t}>
-                              {t} 시작
+                              {t}
                             </option>
                           ))}
                         </select>
@@ -519,7 +519,7 @@ export default function ApplyPage() {
                           <option value="">선택 안 함</option>
                           {FIXED_TIMES.map((t) => (
                             <option key={`t2-${t}`} value={t}>
-                              {t} 시작
+                              {t}
                             </option>
                           ))}
                         </select>

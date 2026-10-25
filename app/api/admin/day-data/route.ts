@@ -28,6 +28,55 @@ function buildDisplayName(
   return `${member.name}${year2}`;
 }
 
+// 🎯 기본 6개 슬롯 생성 헬퍼 (19:00부터 30분 간격 6개)
+async function getOrCreateDaySlots(date: string) {
+  // 1. 해당 날짜의 슬롯 조회
+  const { data: existingSlots, error: fetchErr } = await supabaseAdmin
+    .from('lesson_date_slots')
+    .select('id, slot_index, start_time, end_time, capacity')
+    .eq('lesson_date', date)
+    .order('slot_index');
+
+  if (!fetchErr && existingSlots && existingSlots.length > 0) {
+    return existingSlots;
+  }
+
+  // 2. 없으면 기본 6개 슬롯 생성 (예: 19:00, 19:30, 20:00, 20:30, 21:00, 21:30)
+  const defaultTimes = ['19:00', '19:30', '20:00', '20:30', '21:00', '21:30'];
+  const defaultSlotsToInsert = defaultTimes.map((start, idx) => {
+    // 30분 뒤 종료 시간 계산
+    const [h, m] = start.split(':').map(Number);
+    let endH = h;
+    let endM = m + 30;
+    if (endM >= 60) {
+      endH += 1;
+      endM -= 60;
+    }
+    const end = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+
+    return {
+      lesson_date: date,
+      slot_index: idx + 1,
+      start_time: start,
+      end_time: end,
+      capacity: 2, // 기본 정원
+    };
+  });
+
+  const { data: insertedSlots, error: insertErr } = await supabaseAdmin
+    .from('lesson_date_slots')
+    .insert(defaultSlotsToInsert)
+    .select('id, slot_index, start_time, end_time, capacity')
+    .order('slot_index');
+
+  if (insertErr || !insertedSlots) {
+    console.error('🔥 기본 슬롯 생성 실패:', insertErr);
+    return [];
+  }
+
+  return insertedSlots;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -53,7 +102,7 @@ export async function GET(req: NextRequest) {
       targetTermMonth = dateInfo.term_month;
     }
 
-    // 2. 해당 기수의 term_members 목록 조회 (employee_no와 lesson_day)
+    // 2. 해당 기수의 term_members 목록 조회
     const { data: termMembers, error: tmErr } = await supabaseAdmin
       .from('term_members')
       .select('employee_no, lesson_day')
@@ -73,7 +122,6 @@ export async function GET(req: NextRequest) {
 
       if (mErr) throw mErr;
 
-      // term_members의 요일 정보와 members의 인적사항을 employee_no 기준으로 결합
       activeMembers = (mems ?? []).map((m) => {
         const tm = termMembers.find((t) => t.employee_no === m.employee_no);
         return {
@@ -83,14 +131,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 4. 해당 요일 시간대 슬롯 조회
-    const { data: slots, error: sErr } = await supabaseAdmin
-      .from('time_slots')
-      .select('id, start_time, end_time, capacity')
-      .eq('day_of_week', dow)
-      .order('start_time');
-
-    if (sErr) throw sErr;
+    // 🎯 4. 해당 날짜의 커스텀 6개 슬롯 시간 가져오기 (없으면 자동 생성)
+    const slots = await getOrCreateDaySlots(date);
 
     // 5. 해당 날짜 배정 데이터 조회
     const { data: lessons, error: lErr } = await supabaseAdmin
@@ -121,7 +163,6 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    // 🎯 기본 요일 맞춤 회원 목록 (예외 버튼 안 눌렀을 때)
     const eligibleMembers = filteredMembers.map((m) => {
       const sameNames = nameMap.get(m.name) || [];
       const dispName = buildDisplayName(m, sameNames);
@@ -137,7 +178,6 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 🎯 기수 전체 회원 목록 (예외 버튼 눌렀을 때 다른 요일도 포함하기 위함)
     const allEligibleMembers = activeMembers.map((m) => {
       const sameNames = nameMap.get(m.name) || [];
       const dispName = buildDisplayName(m, sameNames);
@@ -154,10 +194,11 @@ export async function GET(req: NextRequest) {
     });
 
     // 7. 시간대별 배정 목록 매핑
-    const formattedSlots = (slots ?? []).map((slot) => {
+    const formattedSlots = slots.map((slot) => {
       const slotLessons = (lessons ?? []).filter((l) => l.time_slot_id === slot.id);
       return {
         id: slot.id,
+        slot_index: slot.slot_index, // 🎯 1~6번 칸 번호 전달
         start_time: slot.start_time,
         end_time: slot.end_time,
         capacity: slot.capacity,
@@ -181,8 +222,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       slots: formattedSlots,
-      eligibleMembers,     // 기본 요일 맞춤 회원
-      allEligibleMembers,  // 🎯 예외 시 사용할 기수 전체 회원
+      eligibleMembers,
+      allEligibleMembers,
     });
   } catch (err: unknown) {
     console.error("🔥 /api/admin/day-data ERROR:", err);

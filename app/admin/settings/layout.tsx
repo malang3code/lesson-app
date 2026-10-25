@@ -8,9 +8,9 @@ import AdminDrawer from '@/components/AdminDrawer';
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
+  // 🎯 '시간 관리' 탭 제거 완료
   const TABS = [
     { href: '/admin/settings/members', label: '레슨명부' },
-    { href: '/admin/settings/slots', label: '시간 관리' },
     { href: '/admin/settings/recruitment', label: '레슨모집' },
     { href: '/admin/settings/applications', label: '레슨 신청내역' },
   ];

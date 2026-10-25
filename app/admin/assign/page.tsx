@@ -19,14 +19,14 @@ export default function AdminAssignPage() {
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [originalSlots, setOriginalSlots] = useState<Slot[]>([]);
-  const [dataDate, setDataDate] = useState<string | null>(null); // 🎯 현재 슬롯 데이터의 실제 날짜
+  const [dataDate, setDataDate] = useState<string | null>(null);
   const [eligibleMembers, setEligibleMembers] = useState<Member[]>([]);
-  const [allEligibleMembers, setAllEligibleMembers] = useState<Member[]>([]); // 🎯 기수 전체 회원 명단 추가
-  const [showAllOverride, setShowAllOverride] = useState<Record<number, boolean>>({});
+  const [allEligibleMembers, setAllEligibleMembers] = useState<Member[]>([]);
+  const [showAllOverride, setShowAllOverride] = useState<Record<string | number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
-  // 🎯 스왑(변경) 관련 상태
+  // 스왑(변경) 관련 상태
   const [swapModeActive, setSwapModeActive] = useState(false);
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSourceInfo, setSwapSourceInfo] = useState<SwapTargetInfo | null>(null);
@@ -42,7 +42,7 @@ export default function AdminAssignPage() {
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set());
   const [copying, setCopying] = useState(false);
 
-  // 🎯 해당 날짜 스왑 이력 로드
+  // 해당 날짜 스왑 이력 로드
   const loadSwapHistories = useCallback(async (date: string | null) => {
     if (!date) {
       setSwapHistories([]);
@@ -63,7 +63,7 @@ export default function AdminAssignPage() {
     loadSwapHistories(selectedDate);
   }, [selectedDate, loadSwapHistories]);
 
-  // 🎯 공통 저장 바 훅 연결
+  // 공통 저장 바 훅 연결
   const {
     isDirty: rawIsDirty,
     showSaveBar,
@@ -112,11 +112,23 @@ export default function AdminAssignPage() {
           isCompleted: !!a.isCompleted,
         }))
       );
+
+      // 각 슬롯의 변경된 시작 시간 함께 전송
+      const slotUpdates = slots.map((slot) => ({
+        id: slot.id,
+        start_time: slot.start_time,
+      }));
+
       const res = await fetch('/api/admin/lessons/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonDate: selectedDate, assignments }),
+        body: JSON.stringify({ 
+          lessonDate: selectedDate, 
+          assignments,
+          slots: slotUpdates 
+        }),
       });
+
       if (res.ok) {
         setOriginalSlots(slots);
         return true;
@@ -127,7 +139,6 @@ export default function AdminAssignPage() {
     },
   });
 
-  // 🎯 [방어 1] 현재 데이터가 선택된 날짜와 일치하지 않거나 로딩 중이면 isDirty는 무조건 false
   const isDataReady = selectedDate !== null && dataDate === selectedDate && !loading;
   const isDirty = useMemo(() => {
     if (!isDataReady) return false;
@@ -183,7 +194,6 @@ export default function AdminAssignPage() {
 
   const currentLessonIndex = selectedDate ? navigableLessonDates.indexOf(selectedDate) : -1;
 
-  // 🎯 [방어 2] 날짜 전환 시 확인 팝업 (실제 데이터가 준비되어 있고 dirty일 때만)
   const confirmSwitchDate = (newDate: string) => {
     if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 취소하고 이동하시겠습니까?')) return;
     setSelectedDate(newDate);
@@ -193,7 +203,6 @@ export default function AdminAssignPage() {
     setSwapModeActive(false);
   };
 
-  // 🎯 [방어 3] 데이터 로드 시 동기화 (dataDate를 통해 날짜 일치 여부 보장)
   const loadData = useCallback(async () => {
     if (!selectedDate) {
       setSlots([]);
@@ -215,7 +224,7 @@ export default function AdminAssignPage() {
       setOriginalSlots(newSlots);
       setDataDate(targetDate);
       setEligibleMembers(data.eligibleMembers ?? []);
-      setAllEligibleMembers(data.allEligibleMembers ?? data.eligibleMembers ?? []); // 🎯 전체 회원 목록 세팅
+      setAllEligibleMembers(data.allEligibleMembers ?? data.eligibleMembers ?? []);
     } catch {
       showToast('네트워크 오류');
     } finally {
@@ -225,14 +234,35 @@ export default function AdminAssignPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleAssign = (slotId: number, memberIdStr: string) => {
+  // 각 슬롯별 시간 변경 핸들러 (ID 타입 안전성 확보)
+  const handleTimeChange = (slotId: number | string, newStartTime: string) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (String(s.id) !== String(slotId)) return s;
+        const [h, m] = newStartTime.split(':').map(Number);
+        let endH = h;
+        let endM = m + 30;
+        if (endM >= 60) {
+          endH += 1;
+          endM -= 60;
+        }
+        const newEndTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+        return {
+          ...s,
+          start_time: newStartTime,
+          end_time: newEndTime,
+        };
+      })
+    );
+  };
+
+  const handleAssign = (slotId: number | string, memberIdStr: string) => {
     const memberId = Number(memberIdStr);
-    // 🎯 예외 버튼이 켜진 슬롯일 수 있으므로 전체 회원 목록(allEligibleMembers)에서 먼저 찾고 없으면 기본 목록에서 찾기
     const target = allEligibleMembers.find((m) => m.id === memberId) || eligibleMembers.find((m) => m.id === memberId);
     if (!target) return;
     setSlots((prev) =>
       prev.map((s) =>
-        s.id !== slotId
+        String(s.id) !== String(slotId)
           ? s
           : {
               ...s,
@@ -304,11 +334,11 @@ export default function AdminAssignPage() {
 
         return prev.map((s) => {
           let list = [...(s.assigned || [])];
-          if (s.id === swapSourceInfo.timeSlotId) {
+          if (String(s.id) === String(swapSourceInfo.timeSlotId)) {
             list = list.filter((a) => a.memberId !== swapSourceInfo.memberId);
             if (targetItem) list.push(targetItem);
           }
-          if (s.id === target.timeSlotId) {
+          if (String(s.id) === String(target.timeSlotId)) {
             if (targetItem) list = list.filter((a) => a.memberId !== target.memberId);
             if (sourceItem) list.push(sourceItem);
           }
@@ -318,7 +348,7 @@ export default function AdminAssignPage() {
     } else {
       setSlots((prev) =>
         prev.map((s) => {
-          if (s.id === swapSourceInfo.timeSlotId) {
+          if (String(s.id) === String(swapSourceInfo.timeSlotId)) {
             return {
               ...s,
               assigned: (s.assigned || []).filter((a) => a.memberId !== swapSourceInfo.memberId),
@@ -446,7 +476,6 @@ export default function AdminAssignPage() {
         onRevertSwapHistory={handleRevertSwapHistory}
         showDetailInfo={showDetailInfo}
         onToggleDetailInfo={() => setShowDetailInfo((v) => !v)}
-        // 🎯 예외 버튼(showAllOverride)이 켜졌을 때는 allEligibleMembers를 전달하여 요일 제한 해제!
         eligibleMembers={eligibleMembers}
         allEligibleMembers={allEligibleMembers}
         showAllOverride={showAllOverride}
@@ -461,16 +490,34 @@ export default function AdminAssignPage() {
         validCopyDates={rawDates.filter((d) => d.slice(0, 7) >= currentYm && d !== selectedDate).sort()}
         copying={copying}
         onRunCopy={runCopy}
-        onResetDay={() => {
-        // 🎯 변경 이력이 존재하면 비우기 차단 및 안내 알림
-        if (swapHistories && swapHistories.length > 0) {
-          alert('변경 이력이 있으므로, 모두 원복 후 비우기가 가능합니다.');
-          return;
-        }
-        if (confirm('배정을 모두 비우시겠습니까?')) {
-          setSlots((p) => p.map((s) => ({ ...s, assigned: [] })));
-        }
-      }}
+onResetDay={() => {
+          if (swapHistories && swapHistories.length > 0) {
+            alert('변경 이력이 있으므로, 모두 원복 후 비우기가 가능합니다.');
+            return;
+          }
+          if (confirm('배정을 모두 비우고 시간표를 기본 30분 간격으로 초기화하시겠습니까?')) {
+            const defaultTimes = [
+              { start: '19:00', end: '19:30' },
+              { start: '19:30', end: '20:00' },
+              { start: '20:00', end: '20:30' },
+              { start: '20:30', end: '21:00' },
+              { start: '21:00', end: '21:30' },
+              { start: '21:30', end: '22:00' },
+            ];
+            setSlots((prev) =>
+              prev.map((s, idx) => {
+                const t = defaultTimes[idx] || { start: '19:00', end: '19:30' };
+                return {
+                  ...s,
+                  start_time: t.start,
+                  end_time: t.end,
+                  assigned: [],
+                };
+              })
+            );
+          }
+        }}
+        onTimeChange={handleTimeChange}
         isDirty={isDirty}
         saving={saving}
         showSaveBar={showSaveBar}
